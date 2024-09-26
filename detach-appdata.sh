@@ -121,21 +121,28 @@ export -f move_directory_and_symlink
 export -f move_file_and_symlink
 export OPT_DIR VAR_DIR
 
+# Function to exclude hidden directories in find
+exclude_hidden_dirs() {
+    # Prune any directory that starts with a dot
+    # This function will be used within find commands
+    echo ' \( -type d -name ".*" -prune \) -o '
+}
+
 echo "Processing appdata directories..."
-# Find all 'appdata' directories in OPT_DIR and process them
-find "$OPT_DIR" -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
+# Find all 'appdata' directories in OPT_DIR excluding hidden directories and process them
+find "$OPT_DIR" $(exclude_hidden_dirs) -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
     move_directory_and_symlink "$dir"
 done
 
 echo "Processing logs directories..."
-# Find all 'logs' directories in OPT_DIR and process them
-find "$OPT_DIR" -type d -name "logs" -print0 | while IFS= read -r -d '' dir; do
+# Find all 'logs' directories in OPT_DIR excluding hidden directories and process them
+find "$OPT_DIR" $(exclude_hidden_dirs) -type d -name "logs" -print0 | while IFS= read -r -d '' dir; do
     move_directory_and_symlink "$dir"
 done
 
 echo "Processing .env files..."
-# Find all '.env' files (exactly named) in OPT_DIR and process them
-find "$OPT_DIR" -type f -name ".env" -print0 | while IFS= read -r -d '' file; do
+# Find all '.env' files (exactly named) in OPT_DIR excluding hidden directories and process them
+find "$OPT_DIR" $(exclude_hidden_dirs) -type f -name ".env" -print0 | while IFS= read -r -d '' file; do
     move_file_and_symlink "$file"
 done
 
