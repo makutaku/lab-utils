@@ -72,6 +72,12 @@ move_and_symlink() {
     target_dir=$(dirname "$target_path")
     mkdir -p "$target_dir"
 
+    # Check if the target path already exists
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+        echo "Warning: Target path '$target_path' already exists. Skipping."
+        return
+    fi
+
     # Move the item to VAR_DIR
     echo "Moving '$item_path' to '$target_path'..."
     mv "$item_path" "$target_path"
@@ -94,6 +100,13 @@ done
 echo "Processing appdata directories..."
 # Find all appdata directories in OPT_DIR and process them
 find "$OPT_DIR" -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
+    # Ensure that 'appdata' is processed only once at the top level
+    # To avoid processing nested 'appdata' directories
+    parent_dir=$(dirname "$dir")
+    if [ "$(basename "$parent_dir")" != "$OPT_DIR" ]; then
+        # Skip if 'appdata' is nested within another directory
+        continue
+    fi
     move_and_symlink "$dir"
 done
 
