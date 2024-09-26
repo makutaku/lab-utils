@@ -58,12 +58,12 @@ fi
 # Create <var> directory if it doesn't exist
 mkdir -p "$VAR_DIR"
 
-# Function to move a file or directory and create a symbolic link
-move_and_symlink() {
-    local item_path="$1"
+# Function to move a directory and create a symbolic link
+move_directory_and_symlink() {
+    local dir_path="$1"
 
     # Determine the relative path from OPT_DIR
-    rel_path="${item_path#$OPT_DIR/}"
+    rel_path="${dir_path#$OPT_DIR/}"
 
     # Determine the corresponding path in VAR_DIR
     target_path="$VAR_DIR/$rel_path"
@@ -74,40 +74,63 @@ move_and_symlink() {
 
     # Check if the target path already exists
     if [ -e "$target_path" ] || [ -L "$target_path" ]; then
-        echo "Warning: Target path '$target_path' already exists. Skipping."
+        echo "Warning: Target directory '$target_path' already exists. Skipping."
         return
     fi
 
-    # Move the item to VAR_DIR
-    echo "Moving '$item_path' to '$target_path'..."
-    mv "$item_path" "$target_path"
+    # Move the directory to VAR_DIR
+    echo "Moving directory '$dir_path' to '$target_path'..."
+    mv "$dir_path" "$target_path"
 
     # Create a symbolic link in OPT_DIR pointing to VAR_DIR
-    echo "Creating symbolic link '$item_path' -> '$target_path'..."
-    ln -s "$target_path" "$item_path"
+    echo "Creating symbolic link '$dir_path' -> '$target_path'..."
+    ln -s "$target_path" "$dir_path"
 }
 
-# Export function and variables for use in subshells
-export -f move_and_symlink
+# Function to move a file and create a symbolic link
+move_file_and_symlink() {
+    local file_path="$1"
+
+    # Determine the relative path from OPT_DIR
+    rel_path="${file_path#$OPT_DIR/}"
+
+    # Determine the corresponding path in VAR_DIR
+    target_path="$VAR_DIR/$rel_path"
+
+    # Create the target directory if it doesn't exist
+    target_dir=$(dirname "$target_path")
+    mkdir -p "$target_dir"
+
+    # Check if the target path already exists
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+        echo "Warning: Target file '$target_path' already exists. Skipping."
+        return
+    fi
+
+    # Move the file to VAR_DIR
+    echo "Moving file '$file_path' to '$target_path'..."
+    mv "$file_path" "$target_path"
+
+    # Create a symbolic link in OPT_DIR pointing to VAR_DIR
+    echo "Creating symbolic link '$file_path' -> '$target_path'..."
+    ln -s "$target_path" "$file_path"
+}
+
+# Export functions and variables for use in subshells
+export -f move_directory_and_symlink
+export -f move_file_and_symlink
 export OPT_DIR VAR_DIR
 
-echo "Processing .env files..."
-# Find all .env files in OPT_DIR and process them
-find "$OPT_DIR" -type f -name "*.env" -print0 | while IFS= read -r -d '' file; do
-    move_and_symlink "$file"
+echo "Processing appdata directories..."
+# Find all 'appdata' directories in OPT_DIR and process them
+find "$OPT_DIR" -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
+    move_directory_and_symlink "$dir"
 done
 
-echo "Processing appdata directories..."
-# Find all appdata directories in OPT_DIR and process them
-find "$OPT_DIR" -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
-    # Ensure that 'appdata' is processed only once at the top level
-    # To avoid processing nested 'appdata' directories
-    parent_dir=$(dirname "$dir")
-    if [ "$(basename "$parent_dir")" != "$OPT_DIR" ]; then
-        # Skip if 'appdata' is nested within another directory
-        continue
-    fi
-    move_and_symlink "$dir"
+echo "Processing .env files..."
+# Find all '.env' files (exactly named) in OPT_DIR and process them
+find "$OPT_DIR" -type f -name ".env" -print0 | while IFS= read -r -d '' file; do
+    move_file_and_symlink "$file"
 done
 
 echo "All operations completed successfully."
