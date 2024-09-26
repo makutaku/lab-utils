@@ -68,7 +68,7 @@ move_directory_and_symlink() {
     # Determine the corresponding path in VAR_DIR
     target_path="$VAR_DIR/$rel_path"
 
-    # Create the target directory if it doesn't exist
+    # Create the target directory's parent if it doesn't exist
     target_dir=$(dirname "$target_path")
     mkdir -p "$target_dir"
 
@@ -97,7 +97,7 @@ move_file_and_symlink() {
     # Determine the corresponding path in VAR_DIR
     target_path="$VAR_DIR/$rel_path"
 
-    # Create the target directory if it doesn't exist
+    # Create the target directory's parent if it doesn't exist
     target_dir=$(dirname "$target_path")
     mkdir -p "$target_dir"
 
@@ -124,6 +124,12 @@ export OPT_DIR VAR_DIR
 echo "Processing appdata directories..."
 # Find all 'appdata' directories in OPT_DIR and process them
 find "$OPT_DIR" -type d -name "appdata" -print0 | while IFS= read -r -d '' dir; do
+    move_directory_and_symlink "$dir"
+done
+
+echo "Processing logs directories..."
+# Find all 'logs' directories in OPT_DIR and process them
+find "$OPT_DIR" -type d -name "logs" -print0 | while IFS= read -r -d '' dir; do
     move_directory_and_symlink "$dir"
 done
 
