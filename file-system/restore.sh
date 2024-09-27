@@ -75,7 +75,8 @@ fi
 # Extract the directory name from the backup file name
 # Assuming the backup file is named like <DIR_NAME>_YYYYMMDD_HHMMSS.tar.gz
 BASE_NAME=$(basename "$BACKUP_FILE" .tar.gz)
-DIR_NAME="${BASE_NAME%_*}"  # Remove the timestamp part
+# Remove the last two parts (date and time) to get the original directory name
+DIR_NAME=$(echo "$BASE_NAME" | sed -E 's/_[0-9]{8}_[0-9]{6}$//')
 
 # Check if the target directory already exists to prevent overwriting
 TARGET_PATH="${DEST_DIR%/}/$DIR_NAME"
@@ -83,11 +84,8 @@ if [ -e "$TARGET_PATH" ]; then
   error_exit "Target directory '$TARGET_PATH' already exists."
 fi
 
-# Create the target directory
-mkdir -p "$TARGET_PATH"
-
 # Extract the tar.gz archive
-echo "Starting restoration of '$BACKUP_FILE' to '$TARGET_PATH'..."
+echo "Starting restoration of '$BACKUP_FILE' to '$DEST_DIR'..."
 
 if [ "$USE_PV" = true ]; then
   # Calculate total size in bytes of the backup file for progress indication
@@ -100,4 +98,4 @@ else
   tar -xzpf "$BACKUP_FILE" -C "$DEST_DIR"
 fi
 
-echo "Restore completed successfully to: $TARGET_PATH"
+echo "Restore completed successfully to: $DEST_DIR/$DIR_NAME"
