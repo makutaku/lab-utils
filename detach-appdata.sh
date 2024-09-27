@@ -164,7 +164,7 @@ process_directories() {
     for dir in "${DIRECTORIES[@]}"; do
         echo "Processing directory: $dir"
         # Find all directories named "$dir" in SRC_DIR excluding hidden directories
-        find "$SRC_DIR" -type d -name ".*" -prune -o -type d -name "$dir" -print0 | while IFS= read -r -d '' found_dir; do
+        find "$SRC_DIR" \( -type d -name ".*" -prune \) -o -type d -name "$dir" -print0 | while IFS= read -r -d '' found_dir; do
             move_directory_and_symlink "$found_dir"
         done
     done
@@ -175,7 +175,7 @@ process_files() {
     for file in "${FILES[@]}"; do
         echo "Processing file: $file"
         # Find all files named "$file" in SRC_DIR excluding hidden directories
-        find "$SRC_DIR" -type d -name ".*" -prune -o -type f -name "$file" -print0 | while IFS= read -r -d '' found_file; do
+        find "$SRC_DIR" \( -type d -name ".*" -prune \) -o -type f -name "$file" -print0 | while IFS= read -r -d '' found_file; do
             move_file_and_symlink "$found_file"
         done
     done
@@ -188,31 +188,38 @@ process_files() {
 # Initialize DRY_RUN as false
 DRY_RUN=false
 
-# Parse optional arguments
+# Arrays to hold positional arguments
+POSITIONAL_ARGS=()
+
+# Parse all arguments
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         --dry-run)
             DRY_RUN=true
             shift
             ;;
+        -*|--*)
+            echo "Unknown option: $1"
+            usage
+            ;;
         *)
-            # Only expect src and dst as positional arguments
-            break
+            POSITIONAL_ARGS+=("$1") # Collect positional arguments
+            shift
             ;;
     esac
 done
 
-# Check if exactly two arguments remain
-if [ "$#" -ne 2 ]; then
+# Check if exactly two positional arguments are provided
+if [ "${#POSITIONAL_ARGS[@]}" -ne 2 ]; then
     echo "Error: Invalid number of arguments."
     usage
 fi
 
-# Assign input arguments to variables
-SRC_DIR="$1"
-DST_DIR="$2"
+# Assign positional arguments to variables
+SRC_DIR="${POSITIONAL_ARGS[0]}"
+DST_DIR="${POSITIONAL_ARGS[1]}"
 
-# Validate directories
+# Validate source directory
 check_directory "$SRC_DIR"
 
 # Create DST_DIR if it doesn't exist
