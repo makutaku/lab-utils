@@ -33,46 +33,62 @@ LAB_UTILS_DIR="$USER_HOME/lab-utils"
 # Git repository URL
 REPO_URL="https://github.com/makutaku/lab-utils.git"
 
-# URL to the env-aliases.sh script
-ENV_ALIASES_URL="https://raw.githubusercontent.com/makutaku/lab-utils/master/env-aliases.sh"
+# Function to clone or update the lab-utils repository
+clone_or_update_repo() {
+    if [ -d "$LAB_UTILS_DIR/.git" ]; then
+        print_message "Updating existing lab-utils repository..."
+        sudo -u "$USERNAME" git -C "$LAB_UTILS_DIR" pull
+    else
+        print_message "Cloning lab-utils repository into $LAB_UTILS_DIR..."
+        sudo -u "$USERNAME" git clone "$REPO_URL" "$LAB_UTILS_DIR"
+    fi
+}
 
-# Clone the lab-utils repository if it doesn't exist
-if [ -d "$LAB_UTILS_DIR" ]; then
-    print_message "Updating existing lab-utils repository..."
-    sudo -u "$USERNAME" git -C "$LAB_UTILS_DIR" pull
-else
-    print_message "Cloning lab-utils repository into $LAB_UTILS_DIR..."
-    sudo -u "$USERNAME" git clone "$REPO_URL" "$LAB_UTILS_DIR"
-fi
+# Function to verify the presence of env-aliases.sh
+verify_env_aliases() {
+    ENV_ALIASES_FILE="$LAB_UTILS_DIR/env-aliases.sh"
+    if [ ! -f "$ENV_ALIASES_FILE" ]; then
+        echo "Error: env-aliases.sh not found in $LAB_UTILS_DIR."
+        echo "Please ensure the lab-utils repository contains env-aliases.sh."
+        exit 1
+    fi
+}
 
-# Ensure env-aliases.sh exists
-if [ ! -f "$LAB_UTILS_DIR/env-aliases.sh" ]; then
-    print_message "Downloading env-aliases.sh..."
-    sudo -u "$USERNAME" curl -sL "$ENV_ALIASES_URL" -o "$LAB_UTILS_DIR/env-aliases.sh"
-fi
+# Function to backup .bashrc
+backup_bashrc() {
+    BACKUP_BASHRC="$USER_HOME/.bashrc.backup.$(date +%F_%T)"
+    print_message "Backing up existing .bashrc to $BACKUP_BASHRC"
+    cp "$BASHRC" "$BACKUP_BASHRC"
+}
 
-# Backup .bashrc before modifying
-BACKUP_BASHRC="$USER_HOME/.bashrc.backup.$(date +%F_%T)"
-print_message "Backing up existing .bashrc to $BACKUP_BASHRC"
-cp "$BASHRC" "$BACKUP_BASHRC"
+# Function to append source line to .bashrc
+append_source_line() {
+    SOURCE_LINE="source ~/lab-utils/env-aliases.sh"
+    if grep -Fxq "$SOURCE_LINE" "$BASHRC"; then
+        print_message ".bashrc already sources env-aliases.sh. Skipping append."
+    else
+        print_message "Appending source line to .bashrc..."
+        {
+            echo ""
+            echo "# Source environment variables and aliases from lab-utils"
+            echo "$SOURCE_LINE"
+        } >> "$BASHRC"
+    fi
+}
 
-# Check if .bashrc already sources env-aliases.sh
-SOURCE_LINE="source ~/lab-utils/env-aliases.sh"
-if grep -Fxq "$SOURCE_LINE" "$BASHRC"; then
-    print_message ".bashrc already sources env-aliases.sh. Skipping append."
-else
-    print_message "Appending source line to .bashrc..."
-    echo "" >> "$BASHRC"
-    echo "# Source environment variables and aliases from lab-utils" >> "$BASHRC"
-    echo "$SOURCE_LINE" >> "$BASHRC"
-fi
+# Function to reload .bashrc
+reload_bashrc() {
+    print_message "Reloading .bashrc..."
+    # Inform the user to manually source .bashrc since this script runs in a subshell
+    echo "To apply changes immediately, please run:"
+    echo "    source ~/.bashrc"
+}
 
-# Reload .bashrc for the current user
-print_message "Reloading .bashrc..."
-# Using su to run source in the user's shell
-# Note: Sourcing .bashrc in a subshell won't affect the current shell
-# Therefore, inform the user to source it manually
-echo "To apply changes immediately, please run:"
-echo "    source ~/.bashrc"
+# Main Execution Flow
+clone_or_update_repo
+verify_env_aliases
+backup_bashrc
+append_source_line
+reload_bashrc
 
 print_message "Environment setup complete."
