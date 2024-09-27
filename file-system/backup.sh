@@ -17,7 +17,7 @@ usage() {
 
 # Function to display error messages
 error_exit() {
-  echo "Error: $1"
+  echo "Error: $1" >&2
   exit 1
 }
 
@@ -45,11 +45,17 @@ if [ ! -d "$SOURCE_DIR" ]; then
   error_exit "'$SOURCE_DIR' is not a directory."
 fi
 
-# Validate destination directory
+# Check if destination directory exists; if not, attempt to create it
 if [ ! -d "$DEST_DIR" ]; then
-  error_exit "Destination directory '$DEST_DIR' does not exist."
+  echo "Destination directory '$DEST_DIR' does not exist. Attempting to create it..."
+  if mkdir -p "$DEST_DIR"; then
+    echo "Successfully created destination directory '$DEST_DIR'."
+  else
+    error_exit "Failed to create destination directory '$DEST_DIR'. Please check your permissions."
+  fi
 fi
 
+# Validate that destination directory is writable
 if [ ! -w "$DEST_DIR" ]; then
   error_exit "Destination directory '$DEST_DIR' is not writable."
 fi
@@ -63,7 +69,8 @@ else
   echo "To install 'pv', you can use your package manager. For example:"
   echo "  sudo apt-get install pv       # Debian/Ubuntu"
   echo "  sudo yum install pv           # CentOS/RHEL"
-  echo "  brew install pv               # macOS with Homebrew"
+  echo "  sudo dnf install pv           # Fedora"
+  echo "  sudo pacman -S pv             # Arch Linux"
 fi
 
 # Get the directory name without the trailing slash
