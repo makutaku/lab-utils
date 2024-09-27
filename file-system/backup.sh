@@ -81,9 +81,9 @@ fi
 echo "Starting backup of '$SOURCE_DIR' to '$BACKUP_PATH'..."
 
 if [ "$USE_PV" = true ]; then
-  # Calculate total size in bytes for progress indication
-  TOTAL_SIZE=$(du -sb "$SOURCE_DIR" | awk '{print $1}')
-  
+  # Calculate total size in bytes for progress indication, following symlinks
+  TOTAL_SIZE=$(du -sbL "$SOURCE_DIR" | awk '{print $1}')
+
   # Create the archive using tar, pipe through pv for progress, then gzip
   tar -cphf - -C "$(dirname "$SOURCE_DIR")" "$DIR_NAME" | pv -s "$TOTAL_SIZE" | gzip > "$BACKUP_PATH"
 else
