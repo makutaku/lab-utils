@@ -10,6 +10,7 @@ set -e
 # Array of directories to process
 DIRECTORIES=(
     "appdata"
+    "volumes"
     "logs"
     # Add more directories here, e.g., "cache", "data"
 )
