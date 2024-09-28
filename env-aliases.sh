@@ -331,5 +331,8 @@ alias ak-backup='~/lab-utils/file-system/backup.sh'
 alias ak-restore='~/lab-utils/file-system/restore.sh'
 alias ak-clone-repo='~/lab-utils/git/clone-repo.sh'
 alias ak-restart-docker='sudo systemctl restart docker'
-
+alias ak-backup-vol='~/lab-utils/docker/backup-volume.sh'
+alias ak-restore-vol='~/lab-utils/docker/restore-volume.sh'
+alias ak-clone-vol='~/lab-utils/docker/clone-volume.sh'
+alias ak-link-vols='~/lab-utils/docker/link-volumes.sh'
 
