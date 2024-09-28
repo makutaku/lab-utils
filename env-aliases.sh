@@ -330,6 +330,6 @@ alias vnckill1='vncserver -kill :1'
 alias ak-backup='~/lab-utils/file-system/backup.sh'
 alias ak-restore='~/lab-utils/file-system/restore.sh'
 alias ak-clone-repo='~/lab-utils/git/clone-repo.sh'
-
+alias ak-restart-docker='sudo systemctl restart docker'
 
 
