@@ -327,9 +327,9 @@ alias vnckill1='vncserver -kill :1'
 #############################################################################################
 
 ## AK
-alias backupdir='~/lab-utils/file-system/backup.sh'
-alias restoredir='~/lab-utils/file-system/restore.sh'
-alias clonerepo='~/lab-utils/git/clone-repo.sh'
+alias ak-backup='~/lab-utils/file-system/backup.sh'
+alias ak-restore='~/lab-utils/file-system/restore.sh'
+alias ak-clone-repo='~/lab-utils/git/clone-repo.sh'
 
 
 
