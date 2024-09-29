@@ -9,6 +9,7 @@ set -e
 
 # Array of directories to process
 DIRECTORIES=(
+    "secrets"
     "appdata"
     "volumes"
     "logs"
