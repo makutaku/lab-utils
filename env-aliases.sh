@@ -327,6 +327,7 @@ alias vnckill1='vncserver -kill :1'
 #############################################################################################
 
 ## AK
+export HOSTNAME=$(hostname)
 export LAB_STACKS='/opt/lab-stacks'
 export LAB_UTILS="$HOME/lab-utils"
 alias ak-backup='$LAB_UTILS/file-system/backup.sh'
