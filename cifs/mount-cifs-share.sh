@@ -20,8 +20,8 @@ Arguments:
   --help, -?           Display this help and exit
 
 Example:
-  sudo ./mount_cifs_share.sh --host 192.168.1.214 --share downloads --credentials /root/.harvester-smb-credentials
-  sudo ./mount_cifs_share.sh -h 192.168.1.214 -s downloads -c /root/.credentials -m /mnt/mydownloads
+  sudo $0 --host 192.168.1.214 --share downloads --credentials /root/.harvester-smb-credentials
+  sudo $0 -h 192.168.1.214 -s downloads -c /root/.credentials -m /mnt/mydownloads
 EOF
     exit 1
 }
@@ -46,24 +46,27 @@ fstab_entry_exists() {
     grep -Fxq "$1" "$FSTAB_FILE"
 }
 
-# Parse named arguments using getopt
-PARSED_ARGS=$(getopt -o h:s:c:m:? --long host:,share:,credentials:,mount-point:,help -n "$0" -- "$@")
-if [[ $? -ne 0 ]]; then
-    echo_error "Failed to parse arguments."
-    usage
-fi
+# Function to validate mount point format
+is_mountpoint_valid() {
+    if [[ "$MOUNT_POINT" =~ ^/mnt/[^/]+$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
-eval set -- "$PARSED_ARGS"
-
+# Parse named arguments using getopts
 # Initialize variables
 HOST=""
 SHARE=""
 CREDENTIALS_FILE=""
 MOUNT_POINT=""
 
-# Extract options and their arguments into variables
-while true; do
-    case "$1" in
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    key="$1"
+
+    case $key in
         --host|-h)
             HOST="$2"
             shift 2
@@ -83,12 +86,8 @@ while true; do
         --help|-?)
             usage
             ;;
-        --)
-            shift
-            break
-            ;;
         *)
-            echo_error "Unexpected option: $1"
+            echo_error "Unknown option: $1"
             usage
             ;;
     esac
@@ -96,7 +95,7 @@ done
 
 # Validate required arguments
 if [[ -z "$HOST" || -z "$SHARE" || -z "$CREDENTIALS_FILE" ]]; then
-    echo_error "Missing required arguments."
+    echo_error "Missing required arguments: --host, --share, and/or --credentials."
     usage
 fi
 
@@ -116,15 +115,6 @@ if [[ $EUID -ne 0 ]]; then
     echo_error "This script must be run as root. Use sudo."
     exit 1
 fi
-
-# Function to validate mount point format
-is_mountpoint_valid() {
-    if [[ "$MOUNT_POINT" =~ ^/mnt/[^/]+$ ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
 
 # Validate mount point format
 if ! is_mountpoint_valid; then
@@ -180,4 +170,3 @@ else
 fi
 
 exit 0
-
