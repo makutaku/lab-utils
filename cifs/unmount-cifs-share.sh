@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Script to mount a CIFS (SMB) network share based on user-provided named arguments
-# Ensures idempotency and does not modify existing /etc/fstab entries or the credentials file.
+# Script to unmount a CIFS (SMB) network share and remove its entry from /etc/fstab.
+# Does not process, modify, or attempt to set permissions on the credentials file.
 
 # Exit immediately if a command exits with a non-zero status
 set -e
@@ -9,13 +9,13 @@ set -e
 # Function to display usage information
 usage() {
     cat <<EOF
-Usage: $0 --host <host> --share <share> --credentials <credentials_file> [--mount-point <mount_point>]
+Usage: $0 --host <host> --share <share> --credentials <credentials_file> [--mount-point <mount_point>] [--help]
 
 Arguments:
   --host, -h           The IP address or hostname of the SMB/CIFS server (e.g., 192.168.1.214)
   --share, -s          The name of the shared folder on the server (e.g., ak-backups)
   --credentials, -c    The path to the credentials file (e.g., /root/.ak-netops-smb-cred)
-  --mount-point, -m    (Optional) The local directory where the share will be mounted (e.g., /mnt/ak-backups)
+  --mount-point, -m    (Optional) The local directory where the share is mounted (e.g., /mnt/ak-backups)
                        If not provided, defaults to /mnt/<share>
   --help, -?           Display this help and exit
 
@@ -125,13 +125,16 @@ fi
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
 
-# Create Mount Point if it doesn't exist
-if [ ! -d "$MOUNT_POINT" ]; then
-    echo_info "Creating mount point at $MOUNT_POINT..."
-    mkdir -p "$MOUNT_POINT"
-    echo_success "Mount point created."
+# Check if the share is mounted
+if mountpoint -q "$MOUNT_POINT"; then
+    echo_info "The share is currently mounted at $MOUNT_POINT."
+    
+    # Unmount the share
+    echo_info "Unmounting the share from $MOUNT_POINT..."
+    umount "$MOUNT_POINT"
+    echo_success "The share has been unmounted from $MOUNT_POINT."
 else
-    echo_info "Mount point $MOUNT_POINT already exists."
+    echo_info "The share is not currently mounted at $MOUNT_POINT."
 fi
 
 # Backup /etc/fstab
@@ -140,42 +143,22 @@ echo_info "Backing up $FSTAB_FILE to $BACKUP_FILE..."
 cp "$FSTAB_FILE" "$BACKUP_FILE"
 echo_success "Backup created at $BACKUP_FILE."
 
-# Add the fstab entry if it doesn't already exist
-if ! fstab_entry_exists "$FSTAB_ENTRY"; then
-    echo_info "Adding CIFS mount entry to $FSTAB_FILE..."
-    echo "$FSTAB_ENTRY" >> "$FSTAB_FILE"
-    echo_success "Mount entry added to $FSTAB_FILE."
-    
-    # Reload systemd to recognize the new fstab entry
-    echo_info "Reloading systemd daemon to recognize new fstab entries..."
+# Remove the fstab entry if it exists
+if fstab_entry_exists "$FSTAB_ENTRY"; then
+    echo_info "Removing CIFS mount entry from $FSTAB_FILE..."
+    # Use grep -v to exclude the exact fstab entry and overwrite fstab
+    grep -Fxv "$FSTAB_ENTRY" "$FSTAB_FILE" > "${FSTAB_FILE}.tmp" && mv "${FSTAB_FILE}.tmp" "$FSTAB_FILE"
+    echo_success "Mount entry removed from $FSTAB_FILE."
+
+    # Reload systemd to recognize the updated fstab
+    echo_info "Reloading systemd daemon to recognize updated fstab entries..."
     systemctl daemon-reload
     echo_success "Systemd daemon reloaded successfully."
 else
-    echo_info "Mount entry already exists in $FSTAB_FILE."
+    echo_info "No mount entry found for the specified share in $FSTAB_FILE."
 fi
 
-# Verify credentials file exists
-if [ -f "$CREDENTIALS_FILE" ]; then
-    echo_info "Credentials file '$CREDENTIALS_FILE' exists."
-    
-    # Optional: Warn if permissions are not 600
-    CURRENT_PERMS=$(stat -c "%a" "$CREDENTIALS_FILE")
-    if [[ "$CURRENT_PERMS" != "600" ]]; then
-        echo_error "Warning: Permissions on '$CREDENTIALS_FILE' are set to '$CURRENT_PERMS'. It is recommended to set them to '600' for security."
-    fi
-else
-    echo_error "Credentials file '$CREDENTIALS_FILE' does not exist."
-    exit 1
-fi
-
-# Check if the share is already mounted
-if mountpoint -q "$MOUNT_POINT"; then
-    echo_info "The share is already mounted at $MOUNT_POINT."
-else
-    # Mount the share
-    echo_info "Mounting the share at $MOUNT_POINT..."
-    mount "$MOUNT_POINT"
-    echo_success "The share has been mounted at $MOUNT_POINT."
-fi
+echo_success "CIFS (SMB) share unmounting and fstab cleanup completed successfully."
 
 exit 0
+
