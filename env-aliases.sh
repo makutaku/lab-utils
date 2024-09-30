@@ -10,7 +10,8 @@
 
 # CHANGE TO CUSTOM BASH PROMPT
 username=$USER
-export PS1='[\e[0;32m\u\e[0m@\e[0;33m\H\e[0m:\e[0;36m\w\e[0m]\$ '
+export PS1="\[\e[0;32m\]\u\[\e[0m\]@\[\e[0;33m\]\H\[\e[0m\]:\[\e[0;36m\]\w\[\e[0m\]\$ "
+
 
 # DOCKER - All Docker commands start with "d" AND Docker Compose commands start with "dc"
 alias dstop='sudo docker stop $(sudo docker ps -a -q)' # usage: dstop container_name
