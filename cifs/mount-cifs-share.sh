@@ -20,8 +20,8 @@ Arguments:
   --help, -?           Display this help and exit
 
 Example:
-  sudo $0 --host 192.168.1.214 --share ak-backups --credentials /root/.ak-netops-smb-cred
-  sudo $0 -h 192.168.1.214 -s ak-backups -c /root/.ak-netops-smb-cred -m /mnt/mybackups
+  sudo $0 --host 192.168.1.214 --share ak-backups --credentials /etc/samba/.ak-netops-smb-cred
+  sudo $0 -h 192.168.1.214 -s ak-backups -c /etc/samba/.ak-netops-smb-cred -m /mnt/mybackups
 EOF
     exit 1
 }

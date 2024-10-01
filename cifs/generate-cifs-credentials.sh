@@ -14,12 +14,12 @@ Arguments:
   --username, -u      The username for SMB/CIFS authentication.
   --password, -p      The password for SMB/CIFS authentication.
   --file, -f          (Optional) The path to the credentials file.
-                      Defaults to /root/.harvester-smb-credentials
+                      Defaults to /root/.<username>-smb-credentials
   --help, -h          Display this help and exit.
 
 Example:
   sudo ./generate_cifs_credentials.sh --username alice --password 's3cr3tP@ss'
-  sudo ./generate_cifs_credentials.sh -u alice -p 's3cr3tP@ss' -f /root/.custom-credentials
+  sudo ./generate_cifs_credentials.sh -u alice -p 's3cr3tP@ss' -f /etc/samba/.alice-smb-credentials
 EOF
     exit 1
 }
@@ -56,7 +56,7 @@ eval set -- "$PARSED_ARGS"
 # Initialize variables
 USERNAME=""
 PASSWORD=""
-CREDENTIALS_FILE="/root/.harvester-smb-credentials"
+CREDENTIALS_FILE=""
 
 # Extract options and their arguments into variables
 while true; do
@@ -92,6 +92,11 @@ if [[ -z "$USERNAME" || -z "$PASSWORD" ]]; then
     echo_error "Missing required arguments: --username and/or --password."
     usage
 fi
+
+if [[ -z "$CREDENTIALS_FILE" ]]; then
+  CREDENTIALS_FILE="/etc/samba/.${USERNAME}-smb-credentials"
+fi
+
 
 # Ensure the script is run as root
 if [[ $EUID -ne 0 ]]; then
