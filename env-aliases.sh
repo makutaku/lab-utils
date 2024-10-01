@@ -328,6 +328,7 @@ alias vnckill1='vncserver -kill :1'
 #############################################################################################
 
 ## AK
+alias genpass='openssl rand -base64 24 | tr -d "/+=" | head -c32 && echo'
 export HOSTNAME=$(hostname)
 export LAB_STACKS='/opt/lab-stacks'
 export LAB_UTILS="$HOME/lab-utils"
