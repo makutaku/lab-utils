@@ -55,6 +55,17 @@ is_mountpoint_valid() {
     fi
 }
 
+# Function to check for required dependencies
+check_dependencies() {
+    local dependencies=("smbclient" "mount.cifs")
+    for cmd in "${dependencies[@]}"; do
+        if ! command -v "$cmd" &>/dev/null; then
+            echo_error "Required utility '$cmd' is not installed. Please install it and retry."
+            exit 1
+        fi
+    done
+}
+
 # Parse named arguments using getopts
 # Initialize variables
 HOST=""
@@ -115,6 +126,9 @@ if [[ $EUID -ne 0 ]]; then
     echo_error "This script must be run as root. Use sudo."
     exit 1
 fi
+
+# Check for required dependencies
+check_dependencies
 
 # Validate mount point format
 if ! is_mountpoint_valid; then
