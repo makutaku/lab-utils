@@ -38,6 +38,7 @@ fi
 # Add the user to the provided groups
 IFS=',' read -r -a GROUP_ARRAY <<< "$GROUPS"
 for group in "${GROUP_ARRAY[@]}"; do
+  echo "Attempting to add user $USERNAME to group $group."
   if getent group "$group" >/dev/null; then
     run_command "sudo usermod -aG \"$group\" \"$USERNAME\""
     echo "User $USERNAME would be added to group $group."
