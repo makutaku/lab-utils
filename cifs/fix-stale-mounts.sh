@@ -68,4 +68,80 @@ remount_storage_pve() {
     storage_info=$(pvesm status 2>/dev/null | awk -v mp="$mount_point" '$0 ~ mp {print $1}')
     storage_id="$storage_info"
 
-    if [[ -n "$storage_id" ]];
+    if [[ -n "$storage_id" ]]; then
+        echo "Remounting storage: $storage_id"
+        if $DRY_RUN; then
+            echo "[DRY RUN] Would run: pvesm set \"$storage_id\""
+            return 0
+        fi
+        if pvesm set "$storage_id" >/dev/null 2>&1; then
+            echo "Successfully remounted $storage_id"
+            return 0
+        else
+            echo "Failed to remount $storage_id"
+            return 1
+        fi
+    else
+        # Not found in pvesm, try remounting using mount
+        remount_storage_standard "$mount_point"
+    fi
+}
+
+# Function to remount storage using mount (for non-Proxmox systems or fstab entries)
+remount_storage_standard() {
+    local mount_point="$1"
+
+    echo "Remounting $mount_point using /etc/fstab entries..."
+    if $DRY_RUN; then
+        echo "[DRY RUN] Would remount $mount_point using /etc/fstab"
+        return 0
+    fi
+    if mount "$mount_point" >/dev/null 2>&1; then
+        echo "Successfully remounted $mount_point"
+        return 0
+    else
+        echo "Failed to remount $mount_point"
+        return 1
+    fi
+}
+
+# Function to process each mount point
+process_mount_point() {
+    local mount_point="$1"
+
+    echo "Checking mount point: $mount_point"
+
+    if is_mount_stale "$mount_point"; then
+        echo "Stale mount detected at $mount_point"
+
+        if unmount_stale_mount "$mount_point"; then
+            if command -v pvesm >/dev/null 2>&1; then
+                # We are on a Proxmox VE node
+                remount_storage_pve "$mount_point"
+            else
+                # We are on a regular server
+                remount_storage_standard "$mount_point"
+            fi
+        fi
+    else
+        echo "$mount_point is accessible"
+    fi
+}
+
+# Function to get the list of NFS and SMB mount points
+get_mount_points() {
+    grep -E '^[^ ]+ [^ ]+ (nfs|nfs4|cifs|smbfs) ' /proc/mounts | awk '{print $2}'
+}
+
+# Main script execution starts here
+main() {
+    # Iterate over each mount point
+    for mount_point in $(get_mount_points); do
+        process_mount_point "$mount_point"
+    done
+
+    echo "Script execution completed."
+}
+
+# Execute the main function
+main
