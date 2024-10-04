@@ -8,7 +8,7 @@ fi
 
 # Assign arguments to variables
 USERNAME=$1
-GROUPS=$2
+GROUP_LIST=$2
 DRY_RUN=false
 
 # Check if the --dry-run option is provided
@@ -36,7 +36,7 @@ else
 fi
 
 # Add the user to the provided groups
-IFS=',' read -r -a GROUP_ARRAY <<< "$GROUPS"
+IFS=',' read -r -a GROUP_ARRAY <<< "$GROUP_LIST"
 for group in "${GROUP_ARRAY[@]}"; do
   echo "Attempting to add user $USERNAME to group $group."
   if getent group "$group" >/dev/null; then
