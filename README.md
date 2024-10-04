@@ -6,3 +6,9 @@ The following will set up the user environment by cloning the lab-utils reposito
 ```
 curl -H 'Cache-Control: no-cache, no-store' -sL https://raw.githubusercontent.com/makutaku/lab-utils/master/init-user-env.sh | sudo bash -s --
 ```
+
+## Add User
+```
+curl -H 'Cache-Control: no-cache, no-store' -sL https://raw.githubusercontent.com/makutaku/lab-utils/master/add_user.sh | sudo bash -s -- makutaku sudo,users
+```
+
