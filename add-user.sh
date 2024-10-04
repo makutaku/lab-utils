@@ -20,6 +20,13 @@ if [[ "$3" == "--dry-run" ]]; then
   echo "Dry run mode enabled. No changes will be made."
 fi
 
+# Determine if sudo is necessary
+if [[ $EUID -ne 0 ]]; then
+  SUDO_CMD="sudo"
+else
+  SUDO_CMD=""
+fi
+
 # Function to run a command, or echo it in dry-run mode
 run_command() {
   if [[ "$DRY_RUN" == true ]]; then
@@ -34,8 +41,8 @@ if id "$USERNAME" &>/dev/null; then
   echo "User $USERNAME already exists."
 else
   # Create the user with a home directory and bash as the shell
-  run_command "sudo adduser --home \"/home/$USERNAME\" --shell /bin/bash \"$USERNAME\""
-  echo "User $USERNAME would be created with a home directory and bash shell."
+  run_command "$SUDO_CMD adduser --home \"/home/$USERNAME\" --shell /bin/bash \"$USERNAME\""
+  echo "User $USERNAME has been created with a home directory and bash shell."
 fi
 
 # Add the user to the provided groups
@@ -45,8 +52,8 @@ for group in "${GROUP_ARRAY[@]}"; do
   echo "Attempting to add user $USERNAME to group $group."
   if getent group "$group" >/dev/null; then
     # Group exists, proceed to add the user
-    run_command "sudo usermod -aG \"$group\" \"$USERNAME\""
-    echo "User $USERNAME would be added to group $group."
+    run_command "$SUDO_CMD usermod -aG \"$group\" \"$USERNAME\""
+    echo "User $USERNAME has been added to group $group."
   else
     # Group does not exist, output message and do not attempt to add
     echo "Group $group does not exist. Skipping..."
