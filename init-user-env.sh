@@ -37,10 +37,10 @@ REPO_URL="https://github.com/makutaku/lab-utils.git"
 clone_or_update_repo() {
     if [ -d "$LAB_UTILS_DIR/.git" ]; then
         print_message "Updating existing lab-utils repository..."
-        sudo -u "$USERNAME" git -C "$LAB_UTILS_DIR" pull
+        git -C "$LAB_UTILS_DIR" pull
     else
         print_message "Cloning lab-utils repository into $LAB_UTILS_DIR..."
-        sudo -u "$USERNAME" git clone "$REPO_URL" "$LAB_UTILS_DIR"
+        git clone "$REPO_URL" "$LAB_UTILS_DIR"
     fi
 }
 
