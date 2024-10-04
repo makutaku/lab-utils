@@ -36,7 +36,7 @@ else
 fi
 
 # Add the user to the provided groups
-IFS=',' read -ra GROUP_ARRAY <<< "$GROUPS"
+IFS=',' read -r -a GROUP_ARRAY <<< "$GROUPS"
 for group in "${GROUP_ARRAY[@]}"; do
   if getent group "$group" >/dev/null; then
     run_command "sudo usermod -aG \"$group\" \"$USERNAME\""
