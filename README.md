@@ -9,6 +9,6 @@ curl -H 'Cache-Control: no-cache, no-store' -sL https://raw.githubusercontent.co
 
 ## Add User
 ```
-curl -H 'Cache-Control: no-cache, no-store' -sL https://raw.githubusercontent.com/makutaku/lab-utils/master/add_user.sh | sudo bash -s makutaku sudo,users --dry-run
+curl -H 'Cache-Control: no-cache, no-store' -sL https://raw.githubusercontent.com/makutaku/lab-utils/master/add-user.sh | bash -s -- makutaku "sudo,users" --dry-run
 ```
 
