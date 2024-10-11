@@ -1,16 +1,15 @@
 #!/bin/bash
 
 # process_directory.sh
-# Usage: ./process_directory.sh [--match OPTION] [--verbose] target_directory command [args...]
+# Usage: ./process_directory.sh [--match OPTION] [--verbose] target_directory
 #
-# This script processes each regular file in the target_directory by executing
-# the specified command with the file as an argument, based on the --match condition.
+# This script lists each regular file in the target_directory based on the --match condition.
 #
 # Match Options:
-#   --match valid-hash    : Only process files with a corresponding hash file and matching hash.
-#   --match invalid-hash  : Only process files with a corresponding hash file but mismatching hash.
-#   --match missing-hash  : Only process files without a corresponding hash file.
-#   --match all           : Process all files (default).
+#   --match valid-hash    : Only list files with a corresponding hash file and matching hash.
+#   --match invalid-hash  : Only list files with a corresponding hash file but mismatching hash.
+#   --match missing-hash  : Only list files without a corresponding hash file.
+#   --match all           : List all files (default).
 #
 # Options:
 #   --verbose             : Enable verbose output, displaying hash details.
@@ -18,30 +17,29 @@
 # The script always skips hidden files and files with hash extensions (*.sha256).
 #
 # Example:
-#   ./process_directory.sh --match valid-hash --verbose /path/to/dir ./process_file.sh --option value
+#   ./process_directory.sh --match valid-hash --verbose /path/to/dir | ./another_script.sh
 
 # Exit immediately if a command exits with a non-zero status
 set -e
 
 # Function to display usage information
 usage() {
-    echo "Usage: $0 [--match OPTION] [--verbose] target_directory command [args...]"
+    echo "Usage: $0 [--match OPTION] [--verbose] target_directory"
     echo
     echo "Options:"
     echo "  --match OPTION   Filter files based on hash status."
     echo "                   Options:"
-    echo "                     valid-hash    : Only process files with a matching hash."
-    echo "                     invalid-hash  : Only process files with a mismatching hash."
-    echo "                     missing-hash  : Only process files without a hash file."
-    echo "                     all           : Process all files (default)."
+    echo "                     valid-hash    : Only list files with a matching hash."
+    echo "                     invalid-hash  : Only list files with a mismatching hash."
+    echo "                     missing-hash  : Only list files without a hash file."
+    echo "                     all           : List all files (default)."
     echo "  --verbose        Enable verbose output, displaying hash details."
     echo
     echo "Arguments:"
     echo "  target_directory   The directory containing files to process."
-    echo "  command [args...]  The command to execute for each file, followed by its arguments."
     echo
     echo "Example:"
-    echo "  $0 --match valid-hash --verbose /path/to/dir ./process_file.sh --option value"
+    echo "  $0 --match valid-hash --verbose /path/to/dir | ./another_script.sh"
     exit 1
 }
 
@@ -93,18 +91,14 @@ done
 # Restore positional parameters
 set -- "${POSITIONAL[@]}"
 
-# Check if at least two arguments are provided: target_directory and command
-if [ "$#" -lt 2 ]; then
-    echo "Error: Insufficient arguments."
+# Check if exactly one positional argument is provided: target_directory
+if [ "$#" -ne 1 ]; then
+    echo "Error: Exactly one argument required (target_directory)."
     usage
 fi
 
-# Assign the first positional argument to TARGET_DIR and shift it out
+# Assign the positional argument to TARGET_DIR
 TARGET_DIR="$1"
-shift
-
-# Assign the remaining arguments to COMMAND array
-COMMAND=("$@")
 
 # Validate MATCH_OPTION
 case "$MATCH_OPTION" in
@@ -141,7 +135,7 @@ read_expected_hash() {
 }
 
 # Log the start of processing
-echo "Starting processing directory: '$TARGET_DIR' with match condition: '$MATCH_OPTION'"
+echo "Starting processing directory: '$TARGET_DIR' with match condition: '$MATCH_OPTION'" >&2
 
 # Process files based on MATCH_OPTION
 find "$TARGET_DIR" -maxdepth 1 -type f ! -name '.*' ! -name '*.sha256' | while IFS= read -r file; do
@@ -149,26 +143,18 @@ find "$TARGET_DIR" -maxdepth 1 -type f ! -name '.*' ! -name '*.sha256' | while I
     hash_file="${file}.sha256"
 
     if [ "$MATCH_OPTION" == "missing-hash" ]; then
-        # For missing-hash, process files without a hash file
+        # For missing-hash, list files without a hash file
         if [ ! -f "$hash_file" ]; then
-            # Process the file
             if $VERBOSE; then
-                echo "Processing file: '$file'"
+                echo "Listing file: '$file'" >&2
                 echo "  Hash file     : '$hash_file' (missing)"
                 echo "  Hash matches  : N/A"
             fi
-
-            # Execute the command with the file as the last argument
-            "${COMMAND[@]}" "$file"
-
-            # Check if the command succeeded
-            if [ $? -ne 0 ]; then
-                echo "Warning: Command failed for file '$file'. Continuing with next file."
-            fi
+            # Output the file path to stdout
+            echo "$file"
         else
-            # Skip the file
             if $VERBOSE; then
-                echo "Skipping file: '$file'"
+                echo "Skipping file: '$file'" >&2
                 echo "  Hash file     : '$hash_file' (exists)"
                 echo "  Match condition: 'missing-hash'"
             fi
@@ -186,28 +172,28 @@ find "$TARGET_DIR" -maxdepth 1 -type f ! -name '.*' ! -name '*.sha256' | while I
             fi
         fi
 
-        # Determine if the file should be processed based on MATCH_OPTION
-        should_process=false
+        # Determine if the file should be listed based on MATCH_OPTION
+        should_list=false
 
         case "$MATCH_OPTION" in
             valid-hash)
                 if [ -f "$hash_file" ] && [ "$hash_matches" = true ]; then
-                    should_process=true
+                    should_list=true
                 fi
                 ;;
             invalid-hash)
                 if [ -f "$hash_file" ] && [ "$hash_matches" = false ]; then
-                    should_process=true
+                    should_list=true
                 fi
                 ;;
             all)
-                should_process=true
+                should_list=true
                 ;;
         esac
 
-        if $should_process; then
+        if $should_list; then
             if $VERBOSE; then
-                echo "Processing file: '$file'"
+                echo "Listing file: '$file'" >&2
                 echo "  Hash file     : '$hash_file'"
                 if [ -f "$hash_file" ]; then
                     echo "  Expected hash : '$expected_hash'"
@@ -218,17 +204,11 @@ find "$TARGET_DIR" -maxdepth 1 -type f ! -name '.*' ! -name '*.sha256' | while I
                 fi
                 echo "  Hash matches   : $hash_matches"
             fi
-
-            # Execute the command with the file as the last argument
-            "${COMMAND[@]}" "$file"
-
-            # Check if the command succeeded
-            if [ $? -ne 0 ]; then
-                echo "Warning: Command failed for file '$file'. Continuing with next file."
-            fi
+            # Output the file path to stdout
+            echo "$file"
         else
             if $VERBOSE; then
-                echo "Skipping file: '$file'"
+                echo "Skipping file: '$file'" >&2
                 if [ -f "$hash_file" ]; then
                     echo "  Hash file     : '$hash_file'"
                     echo "  Expected hash : '$expected_hash'"
@@ -244,4 +224,4 @@ find "$TARGET_DIR" -maxdepth 1 -type f ! -name '.*' ! -name '*.sha256' | while I
 done
 
 # Log the end of processing
-echo "Processing complete."
+echo "Processing complete." >&2
