@@ -162,8 +162,23 @@ sudo virt-customize -a "$DEST_IMG_FILE" \
   --run-command 'dd if=/dev/zero of=/EMPTY bs=1M || true' \
   --run-command 'rm -f /EMPTY' \
   --run-command 'cloud-init clean' \
+  --run-command 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-overcommit.conf' \
+  --run-command 'echo "vm.swappiness=10" >> /etc/sysctl.d/99-custom.conf' \
+  --run-command 'echo "vm.vfs_cache_pressure=50" >> /etc/sysctl.d/99-custom.conf' \
+  --run-command 'echo "fs.inotify.max_user_watches=262144" >> /etc/sysctl.d/99-custom.conf' \
   --truncate '/etc/machine-id' \
   || error_exit "Failed to set time zone on '$DEST_IMG_FILE'."
+
+  #--run-command 'echo "vm.nr_hugepages=2048" >> /etc/sysctl.d/99-hugepages.conf'
+  #--run-command 'echo "net.core.rmem_max=16777216" >> /etc/sysctl.d/99-network.conf'
+  #--run-command 'echo "net.core.wmem_max=16777216" >> /etc/sysctl.d/99-network.conf'
+  #--run-command 'echo "net.ipv4.tcp_fastopen=3" >> /etc/sysctl.d/99-network.conf'
+  #--run-command 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'
+  #--run-command 'systemctl disable unnecessary-service.service'
+  #--run-command 'mount -o remount,noatime /'
+  #--run-command 'mount -o remount,noatime /var'
+  #--run-command 'echo "noatime" >> /etc/fstab'
+
 
 echo "Customized successfully on '$DEST_IMG_FILE'." >&2
 
