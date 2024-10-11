@@ -143,11 +143,29 @@ cp "$IMG_FILE" "$DEST_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$D
 export LIBGUESTFS_DEBUG=1
 export LIBGUESTFS_TRACE=1
 
-# Set time zone to America/Chicago using virt-customize
-echo "Setting time zone to America/Chicago using virt-customize on '$DEST_IMG_FILE'..." >&2
-sudo virt-customize -a "$DEST_IMG_FILE" --timezone America/Chicago || error_exit "Failed to set time zone on '$DEST_IMG_FILE'."
+TIMEZONE="America/Chicago"
+IMAGE_SIZE="32G"
 
-echo "Time zone set to America/Chicago successfully on '$DEST_IMG_FILE'." >&2
+# Resize the image
+echo "Resizing the image..."
+qemu-img resize "$DEST_IMG_FILE" "$IMAGE_SIZE"
+
+# Customize the image with qemu-guest-agent, timezone, and SSH settings
+echo "Using virt-customize on '$DEST_IMG_FILE'..." >&2
+sudo virt-customize -a "$DEST_IMG_FILE" \
+  --install qemu-guest-agent,cloud-init,smbclient,cifs-utils \
+  --timezone $TIMEZONE \
+  --run-command 'sed -i "s/^PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config' \
+  --run-command 'sed -i "s/^#PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config' \
+  --run-command 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && apt-get clean' \
+  --run-command 'rm -rf /var/lib/apt/lists/*' \
+  --run-command 'dd if=/dev/zero of=/EMPTY bs=1M || true' \
+  --run-command 'rm -f /EMPTY' \
+  --run-command 'cloud-init clean' \
+  --truncate '/etc/machine-id' \
+  || error_exit "Failed to set time zone on '$DEST_IMG_FILE'."
+
+echo "Customized successfully on '$DEST_IMG_FILE'." >&2
 
 # Define the QCOW2 image file path
 if [[ "$DEST_IMG_FILE" == *.img ]]; then
