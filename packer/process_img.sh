@@ -209,7 +209,11 @@ prepare_destination() {
   if [[ -f "$OUTPUT_DIR/$FINAL_QCOW2_FILE" ]]; then
     if [[ "$OVERWRITE" == true ]]; then
       echo "Warning: Overwriting existing QCOW2 file '$FINAL_QCOW2_PATH'." >&2
-      rm -f "$FINAL_QCOW2_PATH" || error_exit "Failed to remove existing QCOW2 file '$FINAL_QCOW2_PATH'."
+      # Move using pv: Copy with progress, then delete source
+      echo "Moving QCOW2 file with progress..." >&2
+      pv "$OUTPUT_DIR/$FINAL_QCOW2_FILE" > "$OUTPUT_DIR/${FINAL_QCOW2_FILE}.tmp" || error_exit "Failed to copy QCOW2 file."
+      mv "$OUTPUT_DIR/${FINAL_QCOW2_FILE}.tmp" "$FINAL_QCOW2_PATH" || error_exit "Failed to rename temporary QCOW2 file."
+      rm -f "$OUTPUT_DIR/$FINAL_QCOW2_FILE" || error_exit "Failed to remove existing QCOW2 file '$FINAL_QCOW2_PATH'."
 
       if [[ -f "$FINAL_QCOW2_HASH_FILE" ]]; then
         echo "Removing existing QCOW2 hash file '$FINAL_QCOW2_HASH_FILE'." >&2
@@ -262,9 +266,9 @@ prepare_working_directory() {
     fi
   fi
 
-  # Copy the IMG file to the working directory with prefix and renamed extension
+  # Copy the IMG file to the working directory with prefix and renamed extension using pv
   echo "Copying IMG file to working directory with prefix and renamed extension..." >&2
-  cp "$IMG_FILE" "$WORKING_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$WORKING_IMG_FILE'."
+  pv "$IMG_FILE" > "$WORKING_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$WORKING_IMG_FILE'."
 
   # Validate the copied IMG file
   COPIED_IMG_HASH="$(sha256sum "$WORKING_IMG_FILE" | awk '{print $1}')"
@@ -279,9 +283,9 @@ transform_to_qcow2() {
   # Name the QCOW2 file with the prefix
   PREF_QCOW2_WORKING_FILE="$TEMP_DIR/${PREFIX}$(basename "${IMG_FILE%.img}.img")"
 
-  # Convert IMG to QCOW2 format with prefixed name
+  # Convert IMG to QCOW2 format with prefixed name and show progress
   echo "Converting IMG to QCOW2 format..." >&2
-  qemu-img convert -f raw -O qcow2 "$WORKING_IMG_FILE" "$PREF_QCOW2_WORKING_FILE" || error_exit "Failed to convert IMG to QCOW2 format."
+  qemu-img convert -p -f raw -O qcow2 "$WORKING_IMG_FILE" "$PREF_QCOW2_WORKING_FILE" || error_exit "Failed to convert IMG to QCOW2 format."
 
   echo "Conversion to QCOW2 format completed successfully." >&2
 
@@ -306,17 +310,18 @@ publish_result() {
   FINAL_QCOW2_HASH_FILE="$OUTPUT_DIR/$(basename "$QCOW2_HASH_FILE")"
   FINAL_SOURCE_HASH_FILE="$OUTPUT_DIR/${PREFIX}$(basename "${IMG_FILE%.img}").orig.img.sha256"
 
-  # Move QCOW2 file
+  # Move QCOW2 file using pv: Copy with progress, then delete source
   echo "Moving QCOW2 file to output directory..." >&2
-  mv "$PREF_QCOW2_WORKING_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move QCOW2 file to output directory."
+  pv "$PREF_QCOW2_WORKING_FILE" > "$FINAL_QCOW2_PATH" || error_exit "Failed to copy QCOW2 file to output directory."
+  rm -f "$PREF_QCOW2_WORKING_FILE" || error_exit "Failed to remove source QCOW2 file '$PREF_QCOW2_WORKING_FILE'."
 
-  # Move QCOW2 hash file
+  # Move QCOW2 hash file using standard mv (no progress)
   echo "Moving QCOW2 hash file to output directory..." >&2
-  mv "$QCOW2_HASH_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move QCOW2 hash file to output directory."
+  mv "$QCOW2_HASH_FILE" "$FINAL_QCOW2_HASH_FILE" || error_exit "Failed to move QCOW2 hash file to output directory."
 
-  # Move original hash file
+  # Move original hash file using standard mv (no progress)
   echo "Moving original IMG hash file to output directory..." >&2
-  mv "$ORIGINAL_HASH_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move original IMG hash file to output directory."
+  mv "$ORIGINAL_HASH_FILE" "$FINAL_SOURCE_HASH_FILE" || error_exit "Failed to move original IMG hash file to output directory."
 
   # Final Validation of QCOW2 file
   echo "Validating the final QCOW2 file against its hash..." >&2
