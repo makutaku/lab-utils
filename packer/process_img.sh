@@ -1,11 +1,20 @@
 #!/bin/bash
 
 # process_img.sh
-# Script to process IMG files by copying to a destination directory,
-# setting the time zone to Chicago, converting to QCOW2 format,
-# prepending "ak-" to the final file, and managing hashes for idempotency.
+# Script to process IMG files by copying to a temporary working directory,
+# validating hashes, ensuring idempotency, converting to QCOW2 format,
+# managing hashes for reliable processing, and cleaning up.
 
 set -euo pipefail
+
+# ----------------------------
+# Constants
+# ----------------------------
+PREFIX="ak_"
+
+# ----------------------------
+# Function Definitions
+# ----------------------------
 
 # Function to display error messages and exit
 error_exit() {
@@ -18,214 +27,385 @@ usage() {
   echo "Usage: $0 [OPTIONS] <path_to_img_file>" >&2
   echo
   echo "Options:" >&2
-  echo "  --dst <DIRECTORY>          Specify the destination directory for the processed IMG file." >&2
-  echo "  --destination <DIR>        Same as --dst; specify the destination directory." >&2
-  echo "  --help                     Display this help message and exit." >&2
+  echo "  --temp-dir <DIRECTORY>   Specify the temporary working directory for processing the IMG file." >&2
+  echo "  --output-dir <DIRECTORY> Specify the directory to place the final QCOW2 file and its hash." >&2
+  echo "  --overwrite              Overwrite existing QCOW2 files and hashes in the output directory." >&2
+  echo "  --script <SCRIPT>        Specify the customization script to run. Defaults to ./customize_img.sh." >&2
+  echo "  --help                   Display this help message and exit." >&2
   echo
-  echo "If neither --dst nor --destination is specified, the default './output' directory is used." >&2
+  echo "If --temp-dir is not specified, a temporary directory is used." >&2
+  echo "If --output-dir is not specified, the default './output' directory is used." >&2
+  echo "If --script is not specified, './customize_img.sh' is used." >&2
   echo
   echo "Examples:" >&2
-  echo "  $0 --dst /path/to/destination /path/to/image.img" >&2
-  echo "  $0 --destination /path/to/destination /path/to/image.img" >&2
+  echo "  $0 --temp-dir ./tmp --output-dir ./output /path/to/image.img" >&2
+  echo "  $0 --output-dir ./output --overwrite /path/to/image.img" >&2
+  echo "  $0 /path/to/image.img" >&2
+  echo "  $0 --temp-dir ./tmp --script /path/to/customize_img.sh /path/to/image.img" >&2
   exit 1
 }
 
-# Check if no arguments were provided
-if [[ $# -lt 1 ]]; then
-  echo "Error: No arguments provided." >&2
-  usage
-fi
+# Function to parse command-line arguments
+parse_arguments() {
+  # Initialize variables
+  TEMP_DIR=""
+  OUTPUT_DIR="./output"
+  OVERWRITE=false
+  IMG_FILE=""
+  SCRIPT="./customize_img.sh"
 
-# Initialize variables
-DST_DIR="./output"
-IMG_FILE=""
-HASH_FILE=""
-DEST_IMG_FILE=""
-QCOW2_IMG_FILE=""
-AK_QCOW2_IMG_FILE=""
-FINAL_HASH_FILE=""
+  # Check if no arguments were provided
+  if [[ $# -lt 1 ]]; then
+    echo "Error: No arguments provided." >&2
+    usage
+  fi
 
-# Parse named arguments
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dst|--destination)
-      if [[ -n "${2:-}" && ! "$2" =~ ^-- ]]; then
-        DST_DIR="$2"
-        shift 2
-      else
-        error_exit "Argument for $1 is missing."
-      fi
-      ;;
-    --help)
-      usage
-      ;;
-    -*)
-      error_exit "Unknown option: $1"
-      ;;
-    *)
-      # Assume the first non-option argument is the IMG file path
-      if [[ -z "$IMG_FILE" ]]; then
-        IMG_FILE="$1"
+  # Parse named arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --temp-dir)
+        if [[ -n "${2:-}" && ! "$2" =~ ^-- ]]; then
+          TEMP_DIR="$2"
+          shift 2
+        else
+          error_exit "Argument for $1 is missing."
+        fi
+        ;;
+      --output-dir)
+        if [[ -n "${2:-}" && ! "$2" =~ ^-- ]]; then
+          OUTPUT_DIR="$2"
+          shift 2
+        else
+          error_exit "Argument for $1 is missing."
+        fi
+        ;;
+      --overwrite)
+        OVERWRITE=true
         shift
-      else
-        error_exit "Multiple IMG file paths provided. Only one is allowed."
-      fi
-      ;;
-  esac
-done
+        ;;
+      --script)
+        if [[ -n "${2:-}" && ! "$2" =~ ^-- ]]; then
+          SCRIPT="$2"
+          shift 2
+        else
+          error_exit "Argument for $1 is missing."
+        fi
+        ;;
+      --help)
+        usage
+        ;;
+      -*)
+        error_exit "Unknown option: $1"
+        ;;
+      *)
+        # Assume the first non-option argument is the IMG file path
+        if [[ -z "$IMG_FILE" ]]; then
+          IMG_FILE="$1"
+          shift
+        else
+          error_exit "Multiple IMG file paths provided. Only one is allowed."
+        fi
+        ;;
+    esac
+  done
 
-# Check if IMG_FILE is set
-if [[ -z "${IMG_FILE:-}" ]]; then
-  echo "Error: No IMG file provided." >&2
-  usage
-fi
+  # Check if IMG_FILE is set
+  if [[ -z "$IMG_FILE" ]]; then
+    error_exit "Path to IMG file is not provided."
+  fi
 
-# Check if the IMG file exists and is a regular file
-if [[ ! -f "$IMG_FILE" ]]; then
-  error_exit "File '$IMG_FILE' does not exist or is not a regular file."
-fi
+  # Check if customization script exists and is executable
+  if [[ ! -x "$SCRIPT" ]]; then
+    error_exit "Customization script '$SCRIPT' does not exist or is not executable."
+  fi
 
-# Check if virt-customize is installed
-if ! command -v virt-customize &> /dev/null; then
-  error_exit "virt-customize is not installed. Please install 'libguestfs-tools'."
-fi
+  # Export variables for use in other functions and external scripts
+  export TEMP_DIR
+  export OUTPUT_DIR
+  export OVERWRITE
+  export IMG_FILE
+  export SCRIPT
+}
 
-# Check if qemu-img is installed
-if ! command -v qemu-img &> /dev/null; then
-  error_exit "qemu-img is not installed. Please install it to perform image conversions."
-fi
+# Function to extract the hash from a hash file
+get_hash_from_file() {
+  local hash_file="$1"
+  
+  if [[ ! -f "$hash_file" ]]; then
+    error_exit "Hash file '$hash_file' does not exist."
+  fi
 
-# Create the destination directory if it doesn't exist
-if [[ ! -d "$DST_DIR" ]]; then
-  echo "Destination directory '$DST_DIR' does not exist. Creating it..." >&2
-  mkdir -p "$DST_DIR" || error_exit "Failed to create directory '$DST_DIR'."
-fi
+  # Extract only the first field (hash), ignoring any additional tokens
+  local hash
+  hash=$(awk '{print $1}' "$hash_file")
 
-# Determine the base name of the IMG file
-IMG_BASE_NAME="$(basename "$IMG_FILE")"
+  # Validate that the extracted hash is a valid SHA256 hash (64 hex characters)
+  if [[ ! "$hash" =~ ^[a-fA-F0-9]{64}$ ]]; then
+    error_exit "Invalid hash format in '$hash_file'. Expected a 64-character hexadecimal SHA256 hash."
+  fi
 
-# Define the destination IMG file path
-DEST_IMG_FILE="$DST_DIR/$IMG_BASE_NAME"
+  echo "$hash"
+}
 
-# Define the hash file path
-HASH_FILE="$DST_DIR/$IMG_BASE_NAME.sha256"
+# Function to validate the source IMG
+validate_source_img() {
+  SOURCE_HASH_FILE="${IMG_FILE}.sha256"
 
-# Compute the SHA256 hash of the original IMG file
-echo "Computing SHA256 hash of '$IMG_FILE'..." >&2
-CURRENT_HASH="$(sha256sum "$IMG_FILE" | awk '{print $1}')"
+  if [[ -f "$SOURCE_HASH_FILE" ]]; then
+    STORED_SOURCE_HASH="$(get_hash_from_file "$SOURCE_HASH_FILE")"
+    COMPUTED_SOURCE_HASH="$(sha256sum "$IMG_FILE" | awk '{print $1}')"
 
-# Check if the hash file exists and matches the current hash
-if [[ -f "$HASH_FILE" ]]; then
-  STORED_HASH="$(cat "$HASH_FILE")"
-  if [[ "$CURRENT_HASH" == "$STORED_HASH" ]]; then
-    # Define the final QCOW2 file path with "ak-" prefix
-    AK_QCOW2_IMG_FILE="$DST_DIR/ak-${IMG_BASE_NAME%.img}.qcow2"
-    if [[ -f "$AK_QCOW2_IMG_FILE" ]]; then
-      echo "Hash matches the stored hash. Skipping processing." >&2
-      echo "$AK_QCOW2_IMG_FILE"
-      echo "IMG processing completed for: $AK_QCOW2_IMG_FILE" >&2
-      exit 0
-    else
-      echo "Hash matches but final QCOW2 file '$AK_QCOW2_IMG_FILE' does not exist. Reprocessing..." >&2
+    if [[ "$COMPUTED_SOURCE_HASH" != "$STORED_SOURCE_HASH" ]]; then
+      error_exit "Source IMG hash mismatch. Expected: $STORED_SOURCE_HASH, Found: $COMPUTED_SOURCE_HASH."
     fi
   else
-    echo "Hash mismatch detected. Reprocessing the IMG file." >&2
+    echo "Warning: No hash file found for source IMG ('$SOURCE_HASH_FILE'). Proceeding without hash validation." >&2
+    COMPUTED_SOURCE_HASH="$(sha256sum "$IMG_FILE" | awk '{print $1}')"
   fi
-else
-  echo "No existing hash file found. Proceeding with processing." >&2
-fi
+}
 
-# Copy the IMG file to the destination directory
-echo "Copying IMG file to '$DEST_IMG_FILE'..." >&2
-cp "$IMG_FILE" "$DEST_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$DEST_IMG_FILE'."
+# Function to ensure idempotency
+ensure_idempotency() {
+  FINAL_QCOW2_FILE="${PREFIX}$(basename "${IMG_FILE%.img}.qcow2")"
+  FINAL_QCOW2_PATH="$OUTPUT_DIR/$FINAL_QCOW2_FILE"
+  FINAL_QCOW2_HASH_FILE="${FINAL_QCOW2_PATH}.sha256"
+  OUTPUT_SOURCE_HASH_FILE="$OUTPUT_DIR/${PREFIX}$(basename "$SOURCE_HASH_FILE")"
 
-# Export debugging variables for virt-customize
-export LIBGUESTFS_DEBUG=1
-export LIBGUESTFS_TRACE=1
+  if [[ -f "$OUTPUT_SOURCE_HASH_FILE" ]]; then
+    STORED_OUTPUT_SOURCE_HASH="$(get_hash_from_file "$OUTPUT_SOURCE_HASH_FILE")"
 
-TIMEZONE="America/Chicago"
-IMAGE_SIZE="32G"
+    if [[ "$COMPUTED_SOURCE_HASH" == "$STORED_OUTPUT_SOURCE_HASH" ]]; then
+      if [[ -f "$FINAL_QCOW2_PATH" && -f "$FINAL_QCOW2_HASH_FILE" ]]; then
+        STORED_FINAL_HASH="$(get_hash_from_file "$FINAL_QCOW2_HASH_FILE")"
+        COMPUTED_FINAL_HASH="$(sha256sum "$FINAL_QCOW2_PATH" | awk '{print $1}')"
 
-# Resize the image
-echo "Resizing the image..."
-qemu-img resize "$DEST_IMG_FILE" "$IMAGE_SIZE"
+        if [[ "$STORED_FINAL_HASH" == "$COMPUTED_FINAL_HASH" ]]; then
+          echo "$FINAL_QCOW2_PATH"
+          return 0  # Idempotency confirmed
+        else
+          echo "Warning: Final QCOW2 hash mismatch. Reprocessing..." >&2
+        fi
+      else
+        echo "Warning: Final QCOW2 file or its hash does not exist. Reprocessing..." >&2
+      fi
+    else
+      echo "Warning: Output directory hash does not match source IMG hash. Reprocessing..." >&2
+    fi
+  else
+    echo "No existing hash file in output directory. Proceeding with processing." >&2
+  fi
 
-# Customize the image with qemu-guest-agent, timezone, and SSH settings
-echo "Using virt-customize on '$DEST_IMG_FILE'..." >&2
-sudo virt-customize -a "$DEST_IMG_FILE" \
-  --install qemu-guest-agent,cloud-init,smbclient,cifs-utils \
-  --timezone $TIMEZONE \
-  --run-command 'sed -i "s/^PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config' \
-  --run-command 'sed -i "s/^#PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config' \
-  --run-command 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && apt-get clean' \
-  --run-command 'rm -rf /var/lib/apt/lists/*' \
-  --run-command 'dd if=/dev/zero of=/EMPTY bs=1M || true' \
-  --run-command 'rm -f /EMPTY' \
-  --run-command 'cloud-init clean' \
-  --run-command 'echo "vm.overcommit_memory=1" > /etc/sysctl.d/99-overcommit.conf' \
-  --run-command 'echo "vm.swappiness=10" >> /etc/sysctl.d/99-custom.conf' \
-  --run-command 'echo "vm.vfs_cache_pressure=50" >> /etc/sysctl.d/99-custom.conf' \
-  --run-command 'echo "fs.inotify.max_user_watches=262144" >> /etc/sysctl.d/99-custom.conf' \
-  --truncate '/etc/machine-id' \
-  || error_exit "Failed to set time zone on '$DEST_IMG_FILE'."
+  return 1  # Need to process
+}
 
-  #--run-command 'echo "vm.nr_hugepages=2048" >> /etc/sysctl.d/99-hugepages.conf'
-  #--run-command 'echo "net.core.rmem_max=16777216" >> /etc/sysctl.d/99-network.conf'
-  #--run-command 'echo "net.core.wmem_max=16777216" >> /etc/sysctl.d/99-network.conf'
-  #--run-command 'echo "net.ipv4.tcp_fastopen=3" >> /etc/sysctl.d/99-network.conf'
-  #--run-command 'echo "performance" | tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor'
-  #--run-command 'systemctl disable unnecessary-service.service'
-  #--run-command 'mount -o remount,noatime /'
-  #--run-command 'mount -o remount,noatime /var'
-  #--run-command 'echo "noatime" >> /etc/fstab'
+# Function to prepare the output destination
+prepare_destination() {
+  # Ensure the output directory exists
+  if [[ ! -d "$OUTPUT_DIR" ]]; then
+    echo "Output directory '$OUTPUT_DIR' does not exist. Creating it..." >&2
+    mkdir -p "$OUTPUT_DIR" || error_exit "Failed to create output directory '$OUTPUT_DIR'."
+  fi
 
+  if [[ -f "$OUTPUT_DIR/$FINAL_QCOW2_FILE" ]]; then
+    if [[ "$OVERWRITE" == true ]]; then
+      echo "Warning: Overwriting existing QCOW2 file '$FINAL_QCOW2_PATH'." >&2
+      rm -f "$FINAL_QCOW2_PATH" || error_exit "Failed to remove existing QCOW2 file '$FINAL_QCOW2_PATH'."
 
-echo "Customized successfully on '$DEST_IMG_FILE'." >&2
+      if [[ -f "$FINAL_QCOW2_HASH_FILE" ]]; then
+        echo "Removing existing QCOW2 hash file '$FINAL_QCOW2_HASH_FILE'." >&2
+        rm -f "$FINAL_QCOW2_HASH_FILE" || error_exit "Failed to remove existing QCOW2 hash file '$FINAL_QCOW2_HASH_FILE'."
+      fi
+    else
+      error_exit "Final QCOW2 file '$FINAL_QCOW2_PATH' already exists. Use --overwrite to replace it."
+    fi
+  fi
 
-# Define the QCOW2 image file path
-if [[ "$DEST_IMG_FILE" == *.img ]]; then
-  QCOW2_IMG_FILE="${DEST_IMG_FILE%.img}.qcow2"
-else
-  error_exit "Destination IMG file does not have a .img extension."
-fi
+  # Clean up any dangling hash files in output directory
+  if [[ -f "$OUTPUT_SOURCE_HASH_FILE" ]]; then
+    echo "Removing existing source hash file '$OUTPUT_SOURCE_HASH_FILE' from output directory." >&2
+    rm -f "$OUTPUT_SOURCE_HASH_FILE" || error_exit "Failed to remove '$OUTPUT_SOURCE_HASH_FILE'."
+  fi
 
-# Convert the IMG file to QCOW2 format
-echo "Converting '$DEST_IMG_FILE' to QCOW2 format as '$QCOW2_IMG_FILE'..." >&2
-qemu-img convert -f raw -O qcow2 "$DEST_IMG_FILE" "$QCOW2_IMG_FILE" || error_exit "Failed to convert '$DEST_IMG_FILE' to QCOW2 format."
+  if [[ -f "$FINAL_QCOW2_HASH_FILE" ]]; then
+    echo "Removing existing QCOW2 hash file '$FINAL_QCOW2_HASH_FILE' from output directory." >&2
+    rm -f "$FINAL_QCOW2_HASH_FILE" || error_exit "Failed to remove '$FINAL_QCOW2_HASH_FILE'."
+  fi
+}
 
-echo "Conversion to QCOW2 format completed successfully: '$QCOW2_IMG_FILE'." >&2
+# Function to prepare the working directory
+prepare_working_directory() {
+  # Set up the temporary working directory
+  if [[ -n "$TEMP_DIR" ]]; then
+    # If temporary directory is specified, ensure it exists or create it
+    if [[ ! -d "$TEMP_DIR" ]]; then
+      echo "Temporary working directory '$TEMP_DIR' does not exist. Creating it..." >&2
+      mkdir -p "$TEMP_DIR" || error_exit "Failed to create temporary working directory '$TEMP_DIR'."
+    fi
+  else
+    # Create a temporary working directory
+    TEMP_DIR=$(mktemp -d -t process_img_temp_XXXXXX)
+    echo "No temporary working directory specified. Using temporary directory '$TEMP_DIR'." >&2
+  fi
 
-# Rename the QCOW2 file to prepend "ak-"
-AK_QCOW2_IMG_FILE="${DST_DIR}/ak-${IMG_BASE_NAME%.img}.qcow2"
-echo "Renaming '$QCOW2_IMG_FILE' to '$AK_QCOW2_IMG_FILE'..." >&2
-mv "$QCOW2_IMG_FILE" "$AK_QCOW2_IMG_FILE" || error_exit "Failed to rename '$QCOW2_IMG_FILE' to '$AK_QCOW2_IMG_FILE'."
+  # Prefixed working IMG file
+  WORKING_IMG_FILE="$TEMP_DIR/${PREFIX}$(basename "$IMG_FILE")"
 
-echo "Renaming completed successfully: '$AK_QCOW2_IMG_FILE'." >&2
+  if [[ -f "$WORKING_IMG_FILE" ]]; then
+    WORKING_IMG_HASH="$(sha256sum "$WORKING_IMG_FILE" | awk '{print $1}')"
 
-# Compute hash of the final QCOW2 file
-echo "Computing SHA256 hash of '$AK_QCOW2_IMG_FILE'..." >&2
-FINAL_HASH="$(sha256sum "$AK_QCOW2_IMG_FILE" | awk '{print $1}')"
+    if [[ "$WORKING_IMG_HASH" == "$COMPUTED_SOURCE_HASH" ]]; then
+      echo "Working IMG file already exists and matches the source hash. Skipping copy." >&2
+      return 0  # Correct IMG already in working directory
+    else
+      echo "Warning: Existing IMG file in working directory does not match source hash. Deleting it..." >&2
+      rm -f "$WORKING_IMG_FILE" || error_exit "Failed to remove mismatched IMG file '$WORKING_IMG_FILE'."
+    fi
+  fi
 
-# Define the final hash file path
-FINAL_HASH_FILE="$AK_QCOW2_IMG_FILE.sha256"
+  # Copy the IMG file to the working directory with prefix
+  echo "Copying IMG file to working directory with prefix..." >&2
+  cp "$IMG_FILE" "$WORKING_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$WORKING_IMG_FILE'."
 
-# Save the final hash to the hash file
-echo "Saving SHA256 hash of final file to '$FINAL_HASH_FILE'..." >&2
-echo "$FINAL_HASH" > "$FINAL_HASH_FILE" || error_exit "Failed to write hash to '$FINAL_HASH_FILE'."
+  # Validate the copied IMG file
+  COPIED_IMG_HASH="$(sha256sum "$WORKING_IMG_FILE" | awk '{print $1}')"
+  if [[ "$COPIED_IMG_HASH" != "$COMPUTED_SOURCE_HASH" ]]; then
+    error_exit "Hash mismatch after copying IMG file. Expected: $COMPUTED_SOURCE_HASH, Found: $COPIED_IMG_HASH."
+  fi
+  echo "Copied IMG file validated successfully." >&2
+}
 
-echo "Hash of final file saved successfully." >&2
+# Function to transform IMG to QCOW2
+transform_to_qcow2() {
+  # Name the QCOW2 file with the prefix
+  PREF_QCOW2_WORKING_FILE="$TEMP_DIR/${PREFIX}$(basename "${IMG_FILE%.img}.qcow2")"
 
-# Save the hash of the input IMG file to the hash file
-echo "Saving SHA256 hash of original IMG file to '$HASH_FILE'..." >&2
-echo "$CURRENT_HASH" > "$HASH_FILE" || error_exit "Failed to write hash to '$HASH_FILE'."
+  # Convert IMG to QCOW2 format with prefixed name
+  echo "Converting IMG to QCOW2 format..." >&2
+  qemu-img convert -f raw -O qcow2 "$WORKING_IMG_FILE" "$PREF_QCOW2_WORKING_FILE" || error_exit "Failed to convert IMG to QCOW2 format."
 
-echo "Hash of original IMG file saved successfully." >&2
+  echo "Conversion to QCOW2 format completed successfully." >&2
 
-echo "Removing temporary RAW IMG file '$DEST_IMG_FILE'..." >&2
-rm "$DEST_IMG_FILE" || error_exit "Failed to remove original IMG file '$DEST_IMG_FILE'."
-echo "Temporary RAW IMG file removed." >&2
+  # Compute hash of QCOW2 file
+  QCOW2_HASH="$(sha256sum "$PREF_QCOW2_WORKING_FILE" | awk '{print $1}')"
+  QCOW2_HASH_FILE="$TEMP_DIR/$(basename "$PREF_QCOW2_WORKING_FILE").sha256"
 
-# Output the full path of the final QCOW2 file to stdout
-echo "$AK_QCOW2_IMG_FILE"
+  echo "Saving QCOW2 hash to '$QCOW2_HASH_FILE'..." >&2
+  echo "$QCOW2_HASH" > "$QCOW2_HASH_FILE" || error_exit "Failed to write QCOW2 hash to '$QCOW2_HASH_FILE'."
 
-echo "IMG processing completed for: $AK_QCOW2_IMG_FILE" >&2
+  # Write original IMG hash to a file in working directory, following IMG file name with prefix
+  ORIGINAL_HASH_FILE="$TEMP_DIR/$(basename "$WORKING_IMG_FILE").sha256"
+  echo "Saving original IMG hash to '$ORIGINAL_HASH_FILE'..." >&2
+  echo "$COMPUTED_SOURCE_HASH" > "$ORIGINAL_HASH_FILE" || error_exit "Failed to write original IMG hash to '$ORIGINAL_HASH_FILE'."
+
+  echo "Transformation to QCOW2 completed successfully." >&2
+}
+
+# Function to publish the final QCOW2 and hash files to the output directory
+publish_result() {
+  FINAL_QCOW2_PATH="$OUTPUT_DIR/$(basename "$PREF_QCOW2_WORKING_FILE")"
+  FINAL_QCOW2_HASH_FILE="$OUTPUT_DIR/$(basename "$QCOW2_HASH_FILE")"
+  FINAL_SOURCE_HASH_FILE="$OUTPUT_DIR/$(basename "$ORIGINAL_HASH_FILE")"
+
+  # Move QCOW2 file
+  echo "Moving QCOW2 file to output directory..." >&2
+  mv "$PREF_QCOW2_WORKING_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move QCOW2 file to output directory."
+
+  # Move QCOW2 hash file
+  echo "Moving QCOW2 hash file to output directory..." >&2
+  mv "$QCOW2_HASH_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move QCOW2 hash file to output directory."
+
+  # Move original hash file
+  echo "Moving original IMG hash file to output directory..." >&2
+  mv "$ORIGINAL_HASH_FILE" "$OUTPUT_DIR/" || error_exit "Failed to move original IMG hash file to output directory."
+
+  # Final Validation of QCOW2 file
+  echo "Validating the final QCOW2 file against its hash..." >&2
+  COMPUTED_FINAL_HASH="$(sha256sum "$FINAL_QCOW2_PATH" | awk '{print $1}')"
+  STORED_FINAL_HASH="$(get_hash_from_file "$FINAL_QCOW2_HASH_FILE")"
+
+  if [[ "$COMPUTED_FINAL_HASH" != "$STORED_FINAL_HASH" ]]; then
+    error_exit "Final QCOW2 hash mismatch. Expected: $STORED_FINAL_HASH, Found: $COMPUTED_FINAL_HASH."
+  fi
+
+  echo "Final QCOW2 file validated successfully." >&2
+}
+
+# Function to clean up the working directory
+clean_up_working_directory() {
+  echo "Removing working IMG file '$WORKING_IMG_FILE'..." >&2
+  rm -f "$WORKING_IMG_FILE" || error_exit "Failed to remove working IMG file '$WORKING_IMG_FILE'."
+
+  # Check if the working directory is empty
+  if [[ -z "$(ls -A "$TEMP_DIR")" ]]; then
+    echo "Working directory '$TEMP_DIR' is empty. Removing it..." >&2
+    rmdir "$TEMP_DIR" || error_exit "Failed to remove working directory '$TEMP_DIR'."
+  else
+    echo "Working directory '$TEMP_DIR' is not empty. Leaving it intact." >&2
+  fi
+}
+
+# ----------------------------
+# Main Execution Flow
+# ----------------------------
+
+main() {
+  parse_arguments "$@"
+
+  # Step 1: Validate the Source IMG
+  echo "----- Step 1: Validate the Source IMG -----" >&2
+  validate_source_img
+  if [[ -f "$SOURCE_HASH_FILE" ]]; then
+    echo "Source IMG hash validated successfully." >&2
+  else
+    echo "Warning: Proceeded without hash validation for source IMG." >&2
+  fi
+
+  # Step 2: Ensure Idempotency
+  echo "----- Step 2: Ensure Idempotency -----" >&2
+  if ensure_idempotency; then
+    echo "Idempotency check passed. Final QCOW2 file and hash already exist." >&2
+    echo "$FINAL_QCOW2_PATH"
+    echo "IMG processing completed for: $FINAL_QCOW2_PATH" >&2
+    exit 0
+  else
+    echo "Proceeding with IMG processing..." >&2
+  fi
+
+  # Step 3: Prepare Destination
+  echo "----- Step 3: Prepare Destination -----" >&2
+  prepare_destination
+
+  # Step 4: Prepare Working Directory
+  echo "----- Step 4: Prepare Working Directory -----" >&2
+  prepare_working_directory
+  echo "Working directory prepared successfully." >&2
+
+  # Step 5: Customize IMG File
+  echo "----- Step 5: Customize IMG File -----" >&2
+  # Invoke the customization script with the working IMG file as an argument
+  "$SCRIPT" "$WORKING_IMG_FILE" || error_exit "Customization script '$SCRIPT' failed."
+  echo "IMG file customized successfully." >&2
+
+  # Step 6: Transform to QCOW2
+  echo "----- Step 6: Transform to QCOW2 -----" >&2
+  transform_to_qcow2
+  echo "IMG transformed to QCOW2 successfully." >&2
+
+  # Step 7: Publish Result
+  echo "----- Step 7: Publish Result -----" >&2
+  publish_result
+
+  # Step 8: Clean Up
+  echo "----- Step 8: Clean Up -----" >&2
+  clean_up_working_directory
+
+  echo "QCOW2 processing and publishing completed successfully." >&2
+
+  # Output the full path of the final QCOW2 file to stdout
+  echo "$FINAL_QCOW2_PATH"
+
+  echo "IMG processing completed for: $FINAL_QCOW2_PATH" >&2
+}
+
+# Invoke the main function with all script arguments
+main "$@"
