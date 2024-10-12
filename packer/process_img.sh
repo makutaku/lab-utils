@@ -41,7 +41,7 @@ usage() {
   echo "  $0 --temp-dir ./tmp --output-dir ./output /path/to/image.img" >&2
   echo "  $0 --output-dir ./output --overwrite /path/to/image.img" >&2
   echo "  $0 /path/to/image.img" >&2
-  echo "  $0 --temp-dir ./tmp --script /path/to/customize_img.sh /path/to/image.img" >&2
+  echo "  $0 --temp-dir ./tmp --script /path/to/customize_img_noop.sh /path/to/image.img" >&2
   exit 1
 }
 
@@ -166,13 +166,13 @@ validate_source_img() {
 
 # Function to ensure idempotency
 ensure_idempotency() {
-  FINAL_QCOW2_FILE="${PREFIX}$(basename "${IMG_FILE%.img}.qcow2")"
+  FINAL_QCOW2_FILE="${PREFIX}$(basename "${IMG_FILE%.img}.img")"
   FINAL_QCOW2_PATH="$OUTPUT_DIR/$FINAL_QCOW2_FILE"
   FINAL_QCOW2_HASH_FILE="${FINAL_QCOW2_PATH}.sha256"
-  OUTPUT_SOURCE_HASH_FILE="$OUTPUT_DIR/${PREFIX}$(basename "$SOURCE_HASH_FILE")"
+  FINAL_SOURCE_HASH_FILE="$OUTPUT_DIR/${PREFIX}$(basename "${IMG_FILE%.img}").orig.img.sha256"
 
-  if [[ -f "$OUTPUT_SOURCE_HASH_FILE" ]]; then
-    STORED_OUTPUT_SOURCE_HASH="$(get_hash_from_file "$OUTPUT_SOURCE_HASH_FILE")"
+  if [[ -f "$FINAL_SOURCE_HASH_FILE" ]]; then
+    STORED_OUTPUT_SOURCE_HASH="$(get_hash_from_file "$FINAL_SOURCE_HASH_FILE")"
 
     if [[ "$COMPUTED_SOURCE_HASH" == "$STORED_OUTPUT_SOURCE_HASH" ]]; then
       if [[ -f "$FINAL_QCOW2_PATH" && -f "$FINAL_QCOW2_HASH_FILE" ]]; then
@@ -221,9 +221,9 @@ prepare_destination() {
   fi
 
   # Clean up any dangling hash files in output directory
-  if [[ -f "$OUTPUT_SOURCE_HASH_FILE" ]]; then
-    echo "Removing existing source hash file '$OUTPUT_SOURCE_HASH_FILE' from output directory." >&2
-    rm -f "$OUTPUT_SOURCE_HASH_FILE" || error_exit "Failed to remove '$OUTPUT_SOURCE_HASH_FILE'."
+  if [[ -f "$FINAL_SOURCE_HASH_FILE" ]]; then
+    echo "Removing existing source hash file '$FINAL_SOURCE_HASH_FILE' from output directory." >&2
+    rm -f "$FINAL_SOURCE_HASH_FILE" || error_exit "Failed to remove '$FINAL_SOURCE_HASH_FILE'."
   fi
 
   if [[ -f "$FINAL_QCOW2_HASH_FILE" ]]; then
@@ -247,8 +247,8 @@ prepare_working_directory() {
     echo "No temporary working directory specified. Using temporary directory '$TEMP_DIR'." >&2
   fi
 
-  # Prefixed working IMG file
-  WORKING_IMG_FILE="$TEMP_DIR/${PREFIX}$(basename "$IMG_FILE")"
+  # Prefixed working IMG file with renamed extension to .orig.img
+  WORKING_IMG_FILE="$TEMP_DIR/${PREFIX}$(basename "${IMG_FILE%.img}.orig.img")"
 
   if [[ -f "$WORKING_IMG_FILE" ]]; then
     WORKING_IMG_HASH="$(sha256sum "$WORKING_IMG_FILE" | awk '{print $1}')"
@@ -262,8 +262,8 @@ prepare_working_directory() {
     fi
   fi
 
-  # Copy the IMG file to the working directory with prefix
-  echo "Copying IMG file to working directory with prefix..." >&2
+  # Copy the IMG file to the working directory with prefix and renamed extension
+  echo "Copying IMG file to working directory with prefix and renamed extension..." >&2
   cp "$IMG_FILE" "$WORKING_IMG_FILE" || error_exit "Failed to copy '$IMG_FILE' to '$WORKING_IMG_FILE'."
 
   # Validate the copied IMG file
@@ -277,7 +277,7 @@ prepare_working_directory() {
 # Function to transform IMG to QCOW2
 transform_to_qcow2() {
   # Name the QCOW2 file with the prefix
-  PREF_QCOW2_WORKING_FILE="$TEMP_DIR/${PREFIX}$(basename "${IMG_FILE%.img}.qcow2")"
+  PREF_QCOW2_WORKING_FILE="$TEMP_DIR/${PREFIX}$(basename "${IMG_FILE%.img}.img")"
 
   # Convert IMG to QCOW2 format with prefixed name
   echo "Converting IMG to QCOW2 format..." >&2
@@ -292,7 +292,7 @@ transform_to_qcow2() {
   echo "Saving QCOW2 hash to '$QCOW2_HASH_FILE'..." >&2
   echo "$QCOW2_HASH" > "$QCOW2_HASH_FILE" || error_exit "Failed to write QCOW2 hash to '$QCOW2_HASH_FILE'."
 
-  # Write original IMG hash to a file in working directory, following IMG file name with prefix
+  # Write original IMG hash to a file in working directory, following IMG file name with prefix and .orig.img.sha256
   ORIGINAL_HASH_FILE="$TEMP_DIR/$(basename "$WORKING_IMG_FILE").sha256"
   echo "Saving original IMG hash to '$ORIGINAL_HASH_FILE'..." >&2
   echo "$COMPUTED_SOURCE_HASH" > "$ORIGINAL_HASH_FILE" || error_exit "Failed to write original IMG hash to '$ORIGINAL_HASH_FILE'."
@@ -304,7 +304,7 @@ transform_to_qcow2() {
 publish_result() {
   FINAL_QCOW2_PATH="$OUTPUT_DIR/$(basename "$PREF_QCOW2_WORKING_FILE")"
   FINAL_QCOW2_HASH_FILE="$OUTPUT_DIR/$(basename "$QCOW2_HASH_FILE")"
-  FINAL_SOURCE_HASH_FILE="$OUTPUT_DIR/$(basename "$ORIGINAL_HASH_FILE")"
+  FINAL_SOURCE_HASH_FILE="$OUTPUT_DIR/${PREFIX}$(basename "${IMG_FILE%.img}").orig.img.sha256"
 
   # Move QCOW2 file
   echo "Moving QCOW2 file to output directory..." >&2
