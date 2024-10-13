@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# customize_img.sh
+# process_img.sh
 # Script to customize IMG files by resizing and applying various configurations
 # using virt-customize.
 

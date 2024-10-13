@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# customize_img_noop.sh
+# process_noop.sh
 # No-op customization script that logs actions without performing any modifications.
 
 set -euo pipefail
