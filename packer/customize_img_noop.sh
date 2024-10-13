@@ -11,20 +11,39 @@ set -euo pipefail
 
 # Function to display error messages and exit
 error_exit() {
-  echo "Error: $1" >&2
+  echo "[ERROR] $1" >&2
   exit 1
 }
 
 # Function to display usage information
 usage() {
-  echo "Usage: $0 <path_to_working_img_file>" >&2
+  echo "Usage: $0 [options] <path_to_working_img_file>" >&2
+  echo
+  echo "Options:" >&2
+  echo "  --force                    Force reprocessing (no effect in no-op script)." >&2
+  echo "  --dry-run                  Simulate the customization process without making changes." >&2
+  echo "  --verbose                  Enable detailed debug logging." >&2
+  echo "  -h, --help                 Display this help message." >&2
   echo
   echo "Arguments:" >&2
-  echo "  <path_to_working_img_file>   Path to the working IMG file to be customized." >&2
+  echo "  <path_to_working_img_file> Path to the working IMG file to be customized." >&2
   echo
   echo "Examples:" >&2
-  echo "  $0 /tmp/ak_image.img" >&2
+  echo "  $0 --verbose /tmp/ak_image.img" >&2
+  echo "  $0 --force --dry-run /tmp/ak_image.img" >&2
   exit 1
+}
+
+# Function to log informational messages
+log_info() {
+  echo "[INFO] $@" >&2
+}
+
+# Function to log debug messages (only when verbose is enabled)
+log_debug() {
+  if [ "$VERBOSE" = true ]; then
+    echo "[DEBUG] $@" >&2
+  fi
 }
 
 # Function to perform no-op customization
@@ -36,9 +55,13 @@ noop_customize_img() {
     error_exit "IMG file '$img_file' does not exist."
   fi
 
-  # Log that no customization is being performed
-  echo "No-op customization script invoked for IMG file: $img_file" >&2
-  echo "No changes have been made to the IMG file." >&2
+  log_info "No-op customization script invoked for IMG file: $img_file"
+
+  if [ "$DRY_RUN" = true ]; then
+    log_info "Dry-run: No changes would be made to the IMG file."
+  else
+    log_info "No changes have been made to the IMG file."
+  fi
 
   # Exit successfully
   exit 0
@@ -49,14 +72,58 @@ noop_customize_img() {
 # ----------------------------
 
 main() {
-  # Check if help is requested
-  if [[ $# -ne 1 || "$1" == "--help" || "$1" == "-h" ]]; then
+  # Initialize flag variables
+  FORCE=false
+  DRY_RUN=false
+  VERBOSE=false
+
+  # Parse arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force)
+        FORCE=true
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      --verbose)
+        VERBOSE=true
+        shift
+        ;;
+      -h|--help)
+        usage
+        ;;
+      --)
+        shift
+        break
+        ;;
+      -*)
+        error_exit "Unknown option: $1"
+        ;;
+      *)
+        INPUT_FILE="$1"
+        shift
+        ;;
+    esac
+  done
+
+  # Check if input file is provided
+  if [[ -z "${INPUT_FILE:-}" ]]; then
     usage
   fi
 
-  local img_file="$1"
+  # Display parsed flags
+  log_debug "Flags set: FORCE=$FORCE, DRY_RUN=$DRY_RUN, VERBOSE=$VERBOSE"
 
-  noop_customize_img "$img_file"
+  # Acknowledge FORCE flag even though it has no effect
+  if [ "$FORCE" = true ]; then
+    log_info "Force mode enabled (no effect in no-op script)."
+  fi
+
+  # Call the no-op customization function
+  noop_customize_img "$INPUT_FILE"
 }
 
 # Invoke the main function with all script arguments
