@@ -53,7 +53,7 @@ customize_img() {
 
   # Default configurations
   TIMEZONE="America/Chicago"
-  IMAGE_SIZE="32G"
+  IMAGE_SIZE="10G"
 
   # Check if the IMG file exists
   if [[ ! -f "$img_file" ]]; then
@@ -77,7 +77,7 @@ customize_img() {
   else
     log_info "Customizing the IMG file with virt-customize..."
     if ! sudo virt-customize -a "$img_file" \
-      --install qemu-guest-agent,cloud-init,smbclient,cifs-utils \
+      --install qemu-guest-agent,cloud-init,smbclient,cifs-utils,pv \
       --timezone "$TIMEZONE" \
       --run-command 'sed -i "s/^PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config' \
       --run-command 'sed -i "s/^#PermitRootLogin.*/PermitRootLogin prohibit-password/" /etc/ssh/sshd_config' \
