@@ -62,6 +62,7 @@ unmount_stale_mounts() {
                 echo "Successfully unmounted $mount_point"
             else
                 echo "Failed to unmount $mount_point"
+            	umount -l "$mount_point" >/dev/null 2>&1;
             fi
         fi
     done
