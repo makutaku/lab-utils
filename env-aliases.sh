@@ -128,10 +128,10 @@ alias .5='cd ../../../../..'
 alias scp='scp -r'
 alias rsynce='sudo rsync -avzh --progress --force --delete --exclude-from $REPO/shared/config/rsync-exclude'
 alias rsyncne='sudo rsync -avzh --progress --force --delete'
-alias cpn='cp --verbose' # native copy
-alias cp='sudo rsync -avzh --info=progress2' # copy files with rsync
-alias mv='sudo rsync -avzh --info=progress2 --remove-source-files' # move files with rsync
-alias mvn='mv --verbose' # native move
+alias cp='cp --verbose' # native copy
+alias cpx='sudo rsync -avzh --info=progress2' # copy files with rsync
+alias mv='mv --verbose' # native move
+alias mvx='sudo rsync -avzh --info=progress2 --remove-source-files' # move files with rsync
 
 # SEARCH AND FIND
 alias gh='history|grep' # search bash history
