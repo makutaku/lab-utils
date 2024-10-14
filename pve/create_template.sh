@@ -5,18 +5,18 @@ usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
-    echo "      --vmid       VM ID for template creation (default 900)"
-    echo "  -f, --force      Force re-download of the Ubuntu image and recreate the VM template."
-    echo "  -u, --username   Set a custom username for the cloud-init user (default: 'admin')."
-    echo "  -p, --pass       Set a custom password for the cloud-init user."
-    echo "  -k, --sshkeys    Set SSH keys for the cloud-init user."
-    echo "  -i, --image      Specify a custom image URL or local path for the VM template."
-    echo "  -s, --storage    Specify the storage location for the VM template (default: 'local-zfs')."
-    echo "  -d, --disk-size  Specify disk size (default '10G')."
-    echo "  -t, --timezone   Set a timezone (default: 'America/Chicago')."
-    echo "  -n, --name       Set the name of the VM."
-    echo "  -c, --clean      Remove libguestfs-tools."
-    echo "  -h, --help       Display this help message and exit."
+    echo "      --vmid          VM ID for template creation (default 900)"
+    echo "  -f, --force         Force re-download of the Ubuntu image and recreate the VM template."
+    echo "  -u, --username      Set a custom username for the cloud-init user (default: 'admin')."
+    echo "  -p, --pass          Set a custom password for the cloud-init user."
+    echo "  -k, --sshkeys       Set SSH keys for the cloud-init user."
+    echo "  -i, --image         Specify a custom image URL or local path for the VM template."
+    echo "      --script        Specify a script to customize the image."
+    echo "      --script-config Specify a configuration file for the customization script."
+    echo "  -s, --storage       Specify the storage location for the VM template (default: 'local-zfs')."
+    echo "  -n, --name          Set the name of the VM."
+    echo "  -c, --clean         Remove libguestfs-tools."
+    echo "  -h, --help          Display this help message and exit."
     echo ""
     echo "This script creates a Proxmox VM template based on a specified or default Ubuntu Cloud Image."
 }
@@ -31,12 +31,12 @@ PASSWORD=""
 SSHKEYS=""
 FORCE=0
 STORAGE="local-zfs"
-IMAGE_SIZE="10G"
 IMAGE_URL=""
 DEFAULT_IMAGE_URL="https://cloud-images.ubuntu.com/noble/20241004/noble-server-cloudimg-amd64.img"
-TIMEZONE="America/Chicago"
 NAME=""
 CLEAN=0
+SCRIPT=""
+SCRIPT_CONFIG=""
 
 # Parse command line arguments
 while [ "$#" -gt 0 ]; do
@@ -84,28 +84,28 @@ while [ "$#" -gt 0 ]; do
             IMAGE_URL="$2"
             shift
             ;;
+        --script)
+            if [ -z "${2:-}" ]; then
+                echo "Error: --script requires a non-empty option argument."
+                exit 1
+            fi
+            SCRIPT="$2"
+            shift
+            ;;
+        --script-config)
+            if [ -z "${2:-}" ]; then
+                echo "Error: --script-config requires a non-empty option argument."
+                exit 1
+            fi
+            SCRIPT_CONFIG="$2"
+            shift
+            ;;
         -s|--storage)
             if [ -z "${2:-}" ]; then
                 echo "Error: --storage requires a non-empty option argument."
                 exit 1
             fi
             STORAGE="$2"
-            shift
-            ;;
-        -d|--disk-size)
-            if [ -z "${2:-}" ]; then
-                echo "Error: --disk-size requires a non-empty option argument."
-                exit 1
-            fi
-            IMAGE_SIZE="$2"
-            shift
-            ;;
-        -t|--timezone)
-            if [ -z "${2:-}" ]; then
-                echo "Error: --timezone requires a non-empty option argument."
-                exit 1
-            fi
-            TIMEZONE="$2"
             shift
             ;;
         -n|--name)
@@ -178,11 +178,23 @@ check_command() {
     fi
 }
 
-REQUIRED_CMDS=("wget" "curl" "virt-customize" "qm" "qemu-img")
+REQUIRED_CMDS=("wget" "curl" "qm" "qemu-img")
 
 for cmd in "${REQUIRED_CMDS[@]}"; do
     check_command "$cmd"
 done
+
+# If a customization script is provided, ensure it is executable
+if [ -n "$SCRIPT" ]; then
+    if [ ! -f "$SCRIPT" ]; then
+        echo "Error: Customization script '$SCRIPT' not found."
+        exit 1
+    fi
+    if [ ! -x "$SCRIPT" ]; then
+        echo "Error: Customization script '$SCRIPT' is not executable."
+        exit 1
+    fi
+fi
 
 # Handle the image file
 if [ "$USE_LOCAL_IMAGE" -eq 1 ]; then
@@ -224,27 +236,21 @@ if qm status "$VMID" &>/dev/null; then
     fi
 fi
 
-# Resize the image
-echo "Resizing the image..."
-if ! qemu-img resize "$IMAGE_PATH" "$IMAGE_SIZE"; then
-    echo "Error: Failed to resize the image."
-    exit 1
+# Customize the image if a script is provided
+if [ -n "$SCRIPT" ]; then
+    echo "Running customization script: $SCRIPT"
+    CUSTOMIZE_CMD=(bash "$SCRIPT" --image "$IMAGE_PATH")
+    # Pass the configuration file if provided
+    if [ -n "$SCRIPT_CONFIG" ]; then
+        CUSTOMIZE_CMD+=(--config "$SCRIPT_CONFIG")
+    fi
+    if ! "${CUSTOMIZE_CMD[@]}"; then
+        echo "Error: Customization script failed."
+        exit 1
+    fi
+else
+    echo "No customization script provided. Skipping image modification."
 fi
-echo "Image resized."
-
-# Customize the image with qemu-guest-agent, timezone, and SSH settings
-echo "Customizing the image..."
-virt-customize -a "$IMAGE_PATH" \
-    --install qemu-guest-agent,cloud-init \
-    --timezone "$TIMEZONE" \
-    --run-command 'sed -i "s/^#*PasswordAuthentication.*/PasswordAuthentication no/" /etc/ssh/sshd_config' \
-    --run-command 'sed -i "s/^#*PermitRootLogin.*/PermitRootLogin no/" /etc/ssh/sshd_config' \
-    --run-command 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && apt-get clean' \
-    --run-command 'rm -rf /var/lib/apt/lists/*' \
-    --run-command 'dd if=/dev/zero of=/EMPTY bs=1M || true' \
-    --run-command 'rm -f /EMPTY' \
-    --run-command 'cloud-init clean' \
-    --truncate '/etc/machine-id'
 
 # Create the VM template
 echo "Creating VM template..."
@@ -300,6 +306,10 @@ qm set "$VMID" --boot c --bootdisk scsi0
 # Add cloud-init drive
 echo "Adding cloud-init drive..."
 qm set "$VMID" --scsi1 "$STORAGE:cloudinit"
+
+# Configure network to use DHCP on net0
+echo "Configuring network to use DHCP on net0..."
+qm set "$VMID" --ipconfig0 ip=dhcp
 
 # Set user/password
 echo "Setting cloud-init user and password..."
