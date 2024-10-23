@@ -291,9 +291,9 @@ echo "Unused disk value: $UNUSED_DISK_VALUE"
 
 # Attach the imported disk to the VM
 echo "Adding disk to VM template..."
-qm set "$VMID" --scsi0 "$UNUSED_DISK_VALUE,discard=on,ssd=1"
+qm set "$VMID" --scsi0 "$UNUSED_DISK_VALUE,discard=on,ssd=1,iothread=1"
 
-# Ensure the 'unusedX' entry no longer exists
+# Ensure the 'unused' entry no longer exists
 if qm config "$VMID" | grep -q "^$UNUSED_DISK_KEY:"; then
     echo "Deleting leftover unused disk entry: $UNUSED_DISK_KEY"
     qm set "$VMID" -delete "$UNUSED_DISK_KEY"
