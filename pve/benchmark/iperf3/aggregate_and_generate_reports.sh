@@ -1,22 +1,49 @@
 #!/bin/bash
 
+# Exit immediately if a command exits with a non-zero status
+set -e
+
 # Determine the directory of the current script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check if at least 2 arguments are provided
-if [ "$#" -lt 2 ]; then
-  echo "Usage: $0 <source_dir> <csv_dir> [pdf_dir]"
+# Function to display usage instructions
+usage() {
+  echo "Usage: $0 <source_dir> [summary_csv_path]"
   echo ""
-  echo "Example:"
-  echo "  $0 ~/iperf/results/ ~/iperf/reports/"
-  echo "  $0 ~/iperf/results/ ~/iperf/reports/ ~/iperf/pdfs/"
+  echo "Arguments:"
+  echo "  <source_dir>         Directory containing the source iperf3 JSON results."
+  echo "  [summary_csv_path]   (Optional) Full path for the summary CSV report."
+  echo "                       If not provided, defaults to <source_dir>/summary.csv."
+  echo ""
+  echo "Examples:"
+  echo "  $0 ~/iperf/results/"
+  echo "  $0 ~/iperf/results/ ~/iperf/reports/iperf3_summary.csv"
   exit 1
+}
+
+# Check if at least 1 argument is provided
+if [ "$#" -lt 1 ]; then
+  usage
 fi
 
 # Assign variables from input arguments
 SOURCE_DIR="$1"
-CSV_DIR="$2"
-PDF_DIR="${3:-$CSV_DIR}" # Use CSV directory if PDF directory is not provided
+
+if [ "$#" -ge 2 ]; then
+  SUMMARY_CSV_PATH="$2"
+else
+  SUMMARY_CSV_PATH="./summary.csv"
+fi
+
+# Extract the directory from the summary CSV path
+SUMMARY_CSV_DIR="$(dirname "$SUMMARY_CSV_PATH")"
+
+# Check if the summary CSV directory exists; if not, attempt to create it
+if [ ! -d "$SUMMARY_CSV_DIR" ]; then
+  echo "Summary CSV directory '$SUMMARY_CSV_DIR' does not exist. Attempting to create it..."
+  mkdir -p "$SUMMARY_CSV_DIR" || { echo "Failed to create directory '$SUMMARY_CSV_DIR'."; exit 1; }
+  echo "Directory '$SUMMARY_CSV_DIR' created successfully."
+fi
 
 # Activate the virtual environment
 VENV_PATH="$SCRIPT_DIR/venv"
@@ -28,18 +55,28 @@ else
   exit 1
 fi
 
-# Run metrics aggregation and report generation
-python3 "$SCRIPT_DIR/metrics_aggregator.py" "$SOURCE_DIR" "$CSV_DIR" &&
-find "$CSV_DIR" -name "*.csv" -exec python3 "$SCRIPT_DIR/generate_report.py" {} "$PDF_DIR" \;
+# Create a temporary file for iperf3_results.json
+TEMP_JSON=$(mktemp) || { echo "Failed to create temporary file."; exit 1; }
+
+# Ensure the temporary file is deleted when the script exits
+trap 'rm -f "$TEMP_JSON"' EXIT
+
+# Aggregate individual results into the temporary JSON file
+python3 "$SCRIPT_DIR/aggregate_json_files.py" "$SOURCE_DIR" "$TEMP_JSON"
+
+# Process the JSON file, select important fields and overwrite the temporary JSON file
+python3 "$SCRIPT_DIR/iperf3_to_csv.py" "$TEMP_JSON" "$TEMP_JSON"
+
+# Group and analyze metrics, generating the summary CSV report at the specified path
+python3 "$SCRIPT_DIR/iperf3_summarize.py" "$TEMP_JSON" "$SUMMARY_CSV_PATH"
 
 # Check the exit status of the entire operation
 if [ $? -eq 0 ]; then
   echo "Metrics aggregation and report generation completed successfully."
+  echo "Summary report available at: $SUMMARY_CSV_PATH"
 else
   echo "An error occurred during the process."
 fi
 
 # Deactivate the virtual environment
 deactivate
-
-
