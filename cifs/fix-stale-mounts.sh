@@ -109,7 +109,7 @@ remount_all_mounts() {
     if $DRY_RUN; then
         log "[DRY RUN] Would run: mount -a"
     else
-        if output=$(mount -a 2>&1); then
+        if output=$(mount -a -v 2>&1); then
             log "All entries from /etc/fstab remounted successfully."
         else
             log "Failed to remount all entries from /etc/fstab."
