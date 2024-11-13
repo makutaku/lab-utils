@@ -46,16 +46,6 @@ is_mount_stale() {
     fi
 }
 
-# Function to check if a mount point is busy
-is_mount_point_busy() {
-    local mount_point="$1"
-    if lsof +D "$mount_point" >/dev/null 2>&1; then
-        return 0  # Mount point is busy
-    else
-        return 1  # Mount point is free
-    fi
-}
-
 # Function to detect stale mounts
 detect_stale_mounts() {
     log "Detecting stale NFS/SMB mounts..."
@@ -75,33 +65,39 @@ unmount_stale_mounts() {
         if $DRY_RUN; then
             log "[DRY RUN] Would attempt to unmount $mount_point"
         else
-            # First, try to unmount normally
+            # Attempt to unmount normally
             if umount "$mount_point" >/dev/null 2>&1; then
                 log "Successfully unmounted $mount_point"
             else
-                log "Normal unmount failed for $mount_point. Checking for busy processes..."
-                if is_mount_point_busy "$mount_point"; then
-                    log "Processes are using $mount_point:"
-                    lsof +D "$mount_point"
-                    log "Attempting to terminate processes using $mount_point..."
-                    if fuser -km "$mount_point"; then
-                        log "Processes terminated. Retrying unmount..."
-                        if umount "$mount_point" >/dev/null 2>&1; then
-                            log "Successfully unmounted $mount_point after terminating processes"
-                        else
-                            log "Failed to unmount $mount_point after terminating processes"
-                        fi
+                log "Failed to unmount $mount_point normally."
+
+                # Check if the mount point is still mounted
+                if mountpoint -q "$mount_point"; then
+                    log "$mount_point is still mounted. Attempting lazy unmount..."
+                    if umount -l "$mount_point" >/dev/null 2>&1; then
+                        log "Successfully lazy unmounted $mount_point"
                     else
-                        log "Failed to terminate processes using $mount_point"
+                        log "Failed to lazy unmount $mount_point"
+
+                        # As a last resort, force unmount
+                        log "Attempting forced unmount..."
+                        if umount -f "$mount_point" >/dev/null 2>&1; then
+                            log "Successfully force unmounted $mount_point"
+                        else
+                            log "Failed to force unmount $mount_point"
+                        fi
                     fi
                 else
-                    log "$mount_point is not busy. Attempting forced unmount..."
-                    if umount -f "$mount_point" >/dev/null 2>&1; then
-                        log "Successfully force unmounted $mount_point"
-                    else
-                        log "Failed to force unmount $mount_point"
-                    fi
+                    log "$mount_point is no longer mounted."
                 fi
+            fi
+
+            # Verify if unmounting was successful
+            if mountpoint -q "$mount_point"; then
+                log "Warning: $mount_point is still mounted after unmount attempts."
+                # Optionally, add additional diagnostics here
+            else
+                log "$mount_point is unmounted."
             fi
         fi
     done
@@ -113,17 +109,38 @@ remount_all_mounts() {
     if $DRY_RUN; then
         log "[DRY RUN] Would run: mount -a"
     else
-        if mount -a; then
+        if output=$(mount -a 2>&1); then
             log "All entries from /etc/fstab remounted successfully."
         else
             log "Failed to remount all entries from /etc/fstab."
+            log "Mount output:"
+            log "$output"
+
+            # Check for busy mount points
             log "Checking for busy mount points..."
             for mount_point in "${STALE_MOUNTS[@]}"; do
-                if is_mount_point_busy "$mount_point"; then
-                    log "Mount point $mount_point is still busy. Processes using it:"
-                    lsof +D "$mount_point"
+                if mountpoint -q "$mount_point"; then
+                    log "$mount_point is still mounted."
+                else
+                    log "$mount_point is not mounted."
+                fi
+
+                if lsof_output=$(lsof +D "$mount_point" 2>/dev/null); then
+                    if [ -n "$lsof_output" ]; then
+                        log "Processes using $mount_point:"
+                        log "$lsof_output"
+                    else
+                        log "No processes are using $mount_point."
+                    fi
+                else
+                    log "Could not check processes using $mount_point."
                 fi
             done
+
+            # Optionally, log kernel messages related to mount errors
+            log "Kernel messages related to CIFS mounts:"
+            dmesg | tail -n 20 | grep -i cifs | tee -a "$LOG_FILE"
+
             log "Consider manually resolving issues with busy mount points."
         fi
     fi
