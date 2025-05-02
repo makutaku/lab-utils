@@ -43,18 +43,20 @@ run()  { $DRY_RUN && log "[dry‑run] $*" || { log "$*"; eval "$*"; }; }
 log "=== ZFS vdev setup script started (pool: $POOL) ==="
 
 ###############################################################################
-# 2. Device‑detection helpers (never cause script to exit)
+# 2. Device‑detection helpers
 ###############################################################################
 find_by_model() {
   local pattern="$1" want="${2:-1}"
-  mapfile -t matches < <(ls -1 /dev/disk/by-id | grep -iE "nvme-.*${pattern}" || true)
+  mapfile -t matches < <(ls -1 /dev/disk/by-id | grep -iE "nvme-.*(${pattern})" || true)
   local i; for ((i=0; i<want && i<${#matches[@]}; i++)); do
     printf '/dev/disk/by-id/%s\n' "${matches[$i]}"
   done
 }
 
-optane=$(find_by_model 'Optane' 1)
-mapfile -t t500 < <(find_by_model 'T500' 2)     # broader match
+# Optane may be labelled “Optane” or by product code SSDPEK1A*
+optane=$(find_by_model 'Optane|SSDPEK1A' 1)
+# Crucial drives: match “T500” anywhere in the id
+mapfile -t t500 < <(find_by_model 'T500' 2)
 
 if [[ -z $optane || ${#t500[@]} -ne 2 ]]; then
   log "ERROR: Did not detect required drives."
