@@ -141,11 +141,11 @@ alias egrep='egrep --color=auto'
 alias fgrep='fgrep --color=auto'
 
 # TRASH - trash-cli
-alias rm='trash-put'
-alias rmv='rm -rv'
-alias tempty='trash-empty ; sudo trash-empty ; sudo -H trash-empty'
-alias tlist='trash-list'
-alias srmt='sudo trash-put'
+#alias rm='trash-put'
+#alias rmv='rm -rv'
+#alias tempty='trash-empty ; sudo trash-empty ; sudo -H trash-empty'
+#alias tlist='trash-list'
+#alias srmt='sudo trash-put'
 
 # FILE SIZE AND STORAGE
 alias fdisk='sudo fdisk -l'
