@@ -42,6 +42,9 @@ git config --global alias.cm commit
 git config --global alias.df diff
 git config --global alias.last 'log -1 HEAD'
 git config --global alias.unstage 'reset HEAD --'
+git config --global alias.u 'reset HEAD --'
+git config --global alias.a add
+
 
 # Log with graph and decorations
 git config --global alias.lg "log --oneline --graph --decorate"
