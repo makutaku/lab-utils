@@ -1,0 +1,13 @@
+name: Mesa
+host: 192.168.1.235
+port: 8728
+username: admin
+password: "Beebo*90023"
+use_ssl: false
+ssl_verify: false
+bridge_name: bridge
+interface_configs:
+  - "ipmi,10,yes,admit-only-untagged-and-priority-tagged"
+  - "refuge,11,yes,admit-all"
+  - "highlands,11,yes,admit-all"
+
